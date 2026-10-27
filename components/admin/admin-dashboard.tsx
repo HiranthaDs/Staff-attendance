@@ -61,7 +61,7 @@ export function AdminDashboard({ admin, today, initialBranches, initialStaff, at
   const activeStaff = staff.filter((person) => person.active);
   const attendanceRate = activeStaff.length ? Math.round((todaysAttendance.length / activeStaff.length) * 100) : 0;
 
-  async function logout() { await createClient().auth.signOut(); router.replace("/login"); router.refresh(); }
+  async function logout() { await createClient().auth.signOut(); router.replace("/login"); }
   function navigate(next: Tab) { setTab(next); setSidebarOpen(false); }
   function openStaffModal(branchId?: string) { setStaffModalBranchId(branchId); setStaffModal(true); }
   const filteredStaff = staff.filter((person) => `${person.full_name} ${person.email} ${person.employee_code}`.toLowerCase().includes(search.toLowerCase()));

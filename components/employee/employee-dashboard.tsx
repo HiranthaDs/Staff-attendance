@@ -93,8 +93,14 @@ export function EmployeeDashboard({
 
   useEffect(() => {
     const checkDateRollover = () => {
-      if (branchLocalDate(new Date(), profile.branch?.timezone || "Asia/Colombo") !== today) router.refresh();
+      const currentDate = branchLocalDate(new Date(), profile.branch?.timezone || "Asia/Colombo");
+      if (currentDate === today) return;
+      const refreshKey = "presence:last-date-rollover-refresh";
+      if (window.sessionStorage.getItem(refreshKey) === currentDate) return;
+      window.sessionStorage.setItem(refreshKey, currentDate);
+      router.refresh();
     };
+    checkDateRollover();
     const timer = window.setInterval(checkDateRollover, 60_000);
     return () => window.clearInterval(timer);
   }, [profile.branch?.timezone, router, today]);

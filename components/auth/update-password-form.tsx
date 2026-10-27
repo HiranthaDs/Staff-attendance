@@ -22,7 +22,6 @@ export function UpdatePasswordForm({ firstLogin = false }: { firstLogin?: boolea
     if (!response.ok) { setError(json.error); setLoading(false); return; }
     await createClient().auth.refreshSession();
     router.replace("/");
-    router.refresh();
   }
 
   return (

@@ -37,7 +37,6 @@ export function LoginForm({ initialErrorCode = "", nextPath = "/" }: { initialEr
         ? typeof result.redirectTo === "string" ? result.redirectTo : "/"
         : nextPath;
       router.replace(destination);
-      router.refresh();
     } catch {
       setError("The sign-in service could not be reached. Check your connection and try again.");
     } finally {

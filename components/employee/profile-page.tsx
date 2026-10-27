@@ -57,7 +57,6 @@ export function EmployeeProfilePage({ profile, attendance, leaves }: { profile: 
   async function logout() {
     await createClient().auth.signOut();
     router.replace("/login");
-    router.refresh();
   }
 
   return <main className="employee-shell ios-shell profile-page-shell">

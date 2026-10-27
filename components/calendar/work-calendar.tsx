@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { addDays, addMonths, eachDayOfInterval, format, isSameMonth, parseISO, startOfMonth } from "date-fns";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, Moon, Palmtree, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { sriLankaHolidaysForYear, type SriLankaHoliday } from "@/lib/sri-lanka-holidays";
@@ -32,15 +32,39 @@ export function WorkCalendar({
   const [visibleMonth, setVisibleMonth] = useState(startOfMonth(todayDate));
   const [selectedDate, setSelectedDate] = useState(today);
   const [addedNotes, setAddedNotes] = useState<CalendarNote[]>([]);
+  const [realtimeNotes, setRealtimeNotes] = useState<CalendarNote[]>([]);
   const [deletedNoteIds, setDeletedNoteIds] = useState<string[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const notes = useMemo(() => {
-    const byId = new Map([...initialNotes, ...addedNotes].map((note) => [note.id, note]));
+    const byId = new Map([...initialNotes, ...addedNotes, ...realtimeNotes].map((note) => [note.id, note]));
     return [...byId.values()].filter((note) => !deletedNoteIds.includes(note.id));
-  }, [addedNotes, deletedNoteIds, initialNotes]);
+  }, [addedNotes, deletedNoteIds, initialNotes, realtimeNotes]);
+
+  useEffect(() => {
+    const updateCalendar = (event: Event) => {
+      const detail = (event as CustomEvent<{ eventType?: string; note?: Partial<CalendarNote> }>).detail;
+      const note = detail?.note;
+      if (!note?.id) return;
+      if (detail.eventType === "DELETE") {
+        setDeletedNoteIds((current) => current.includes(note.id!) ? current : [...current, note.id!]);
+        setRealtimeNotes((current) => current.filter((item) => item.id !== note.id));
+        return;
+      }
+      if (!note.note_date || !note.title) return;
+      setDeletedNoteIds((current) => current.filter((id) => id !== note.id));
+      setRealtimeNotes((current) => {
+        const existing = current.find((item) => item.id === note.id)
+          ?? initialNotes.find((item) => item.id === note.id);
+        const updated = { ...existing, ...note } as CalendarNote;
+        return [...current.filter((item) => item.id !== note.id), updated];
+      });
+    };
+    window.addEventListener("presence:calendar-updated", updateCalendar);
+    return () => window.removeEventListener("presence:calendar-updated", updateCalendar);
+  }, [initialNotes]);
 
   const monthItems = useMemo<CalendarItem[]>(() => {
     const holidays: CalendarItem[] = sriLankaHolidaysForYear(visibleMonth.getFullYear()).map((holiday, index) => ({

@@ -28,7 +28,7 @@ export type GpsConsensus = {
 
 export type GpsDecision = {
   allowed: boolean;
-  method: "precise_radius" | "contained_uncertainty" | "none";
+  method: "precise_radius" | "standard_radius" | "none";
   reason: string;
 };
 
@@ -182,15 +182,16 @@ export function evaluateGeofence(input: {
   radiusM: number;
   maxAccuracyM: number;
 }): GpsDecision {
-  if (input.effectiveAccuracyM <= input.maxAccuracyM && input.distanceFromBranchM <= input.radiusM) {
-    return { allowed: true, method: "precise_radius", reason: "GPS position is inside the branch radius" };
+  const acceptedAccuracyM = Math.max(200, input.maxAccuracyM);
+  if (input.effectiveAccuracyM > acceptedAccuracyM) {
+    return { allowed: false, method: "none", reason: `Location accuracy is too low (+/-${Math.round(input.effectiveAccuracyM)} m). Enable precise location and try again.` };
   }
-  const coarseCeiling = Math.max(input.maxAccuracyM, Math.min(200, input.maxAccuracyM * 2));
-  if (input.effectiveAccuracyM <= coarseCeiling && input.distanceFromBranchM + input.effectiveAccuracyM <= input.radiusM) {
-    return { allowed: true, method: "contained_uncertainty", reason: "GPS uncertainty is fully contained by the branch radius" };
+  if (input.distanceFromBranchM <= input.radiusM) {
+    return {
+      allowed: true,
+      method: input.effectiveAccuracyM <= input.maxAccuracyM ? "precise_radius" : "standard_radius",
+      reason: "Location is inside the branch radius",
+    };
   }
-  if (input.effectiveAccuracyM > coarseCeiling) {
-    return { allowed: false, method: "none", reason: "GPS accuracy is too low" };
-  }
-  return { allowed: false, method: "none", reason: "GPS position is outside the branch radius" };
+  return { allowed: false, method: "none", reason: `Your location is ${Math.round(input.distanceFromBranchM)} m from the office centre, outside the ${input.radiusM} m attendance radius.` };
 }

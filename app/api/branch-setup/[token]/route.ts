@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { distanceInMeters, resolveRequestIp } from "@/lib/attendance";
+import { distanceInMeters } from "@/lib/attendance";
 
 export const dynamic = "force-dynamic";
 
@@ -10,20 +10,13 @@ const submissionSchema = z.object({
   address: z.string().trim().min(5).max(300),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
-  accuracy_m: z.number().int().min(1).max(150),
+  accuracy_m: z.number().int().min(1).max(200),
   captured_at: z.string().datetime(),
   evidence_latitude: z.number().min(-90).max(90),
   evidence_longitude: z.number().min(-180).max(180),
-  sample_count: z.number().int().min(3).max(100),
-  consensus_count: z.number().int().min(3).max(100),
-  spread_m: z.number().min(0).max(80),
-  expected_public_ip: z.string().min(2).max(100),
-  wifi_name: z.string().trim().min(2).max(100),
-  connection_type: z.string().max(40).nullable().optional(),
-  effective_type: z.string().max(40).nullable().optional(),
-  downlink_mbps: z.number().min(0).max(100000).nullable().optional(),
-  rtt_ms: z.number().int().min(0).max(1_000_000).nullable().optional(),
-  save_data: z.boolean().nullable().optional(),
+  sample_count: z.number().int().min(1).max(100),
+  consensus_count: z.number().int().min(1).max(100),
+  spread_m: z.number().min(0).max(200),
   device_info: z.record(z.string(), z.unknown()).optional(),
   manager_name: z.string().trim().min(2).max(100),
   manager_phone: z.string().trim().min(7).max(30),
@@ -37,7 +30,7 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export async function GET(request: Request, context: { params: Promise<{ token: string }> }) {
+export async function GET(_request: Request, context: { params: Promise<{ token: string }> }) {
   const { token } = await context.params;
   if (!/^[A-Za-z0-9_-]{40,60}$/.test(token)) return NextResponse.json({ error: "This setup link is invalid." }, { status: 404 });
   const admin = createAdminClient();
@@ -49,14 +42,7 @@ export async function GET(request: Request, context: { params: Promise<{ token: 
     await admin.from("branch_setup_invites").update({ status: "expired" }).eq("token_hash", hashToken(token));
     invite.status = "expired";
   }
-  const ipEvidence = await resolveRequestIp(request.headers, { allowLocalEgressFallback: true });
-  return NextResponse.json({
-    invite,
-    public_ip: ipEvidence.verified ? ipEvidence.ip : null,
-    public_ip_verified: ipEvidence.verified,
-    public_ip_source: ipEvidence.source,
-    public_ip_evidence_count: ipEvidence.evidenceCount,
-  });
+  return NextResponse.json({ invite });
 }
 
 export async function POST(request: Request, context: { params: Promise<{ token: string }> }) {
@@ -65,15 +51,9 @@ export async function POST(request: Request, context: { params: Promise<{ token:
   const parsed = submissionSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     const accuracyIssue = parsed.error.issues.some((issue) => issue.path[0] === "accuracy_m");
-    return NextResponse.json({ error: accuracyIssue ? "Location accuracy must be 150 m or better." : "Complete all required setup details." }, { status: 400 });
+    return NextResponse.json({ error: accuracyIssue ? "Location accuracy must be 200 m or better." : "Complete all required setup details." }, { status: 400 });
   }
-  const ipEvidence = await resolveRequestIp(request.headers, { allowLocalEgressFallback: true });
-  const publicIp = ipEvidence.verified ? ipEvidence.ip : null;
-  if (!publicIp) return NextResponse.json({ error: "The office public IP could not be verified. Disable VPN and mobile data, connect to office Wi-Fi, and retry." }, { status: 400 });
   const input = parsed.data;
-  if (input.expected_public_ip !== publicIp) {
-    return NextResponse.json({ error: "The internet connection changed during setup. Reconnect to the office Wi-Fi and capture again." }, { status: 409 });
-  }
   const admin = createAdminClient();
   const { data: invite } = await admin.from("branch_setup_invites")
     .select("id")
@@ -102,13 +82,13 @@ export async function POST(request: Request, context: { params: Promise<{ token:
     p_longitude: input.longitude,
     p_accuracy_m: input.accuracy_m,
     p_captured_at: input.captured_at,
-    p_public_ip: publicIp,
-    p_wifi_name: input.wifi_name,
-    p_connection_type: input.connection_type ?? null,
-    p_effective_type: input.effective_type ?? null,
-    p_downlink_mbps: input.downlink_mbps ?? null,
-    p_rtt_ms: input.rtt_ms ?? null,
-    p_save_data: input.save_data ?? null,
+    p_public_ip: "location-only",
+    p_wifi_name: "Not collected",
+    p_connection_type: null,
+    p_effective_type: null,
+    p_downlink_mbps: null,
+    p_rtt_ms: null,
+    p_save_data: null,
     p_device_info: {
       ...(input.device_info ?? {}),
       verifiedLocationEvidence: {
@@ -121,10 +101,7 @@ export async function POST(request: Request, context: { params: Promise<{ token:
         spreadM: input.spread_m,
         evidenceToPinM,
       },
-      publicIpVerification: {
-        source: ipEvidence.source,
-        evidenceCount: ipEvidence.evidenceCount,
-      },
+      verificationMethod: "location_radius",
     },
     p_user_agent: request.headers.get("user-agent"),
     p_manager_name: input.manager_name,

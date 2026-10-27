@@ -21,7 +21,6 @@ import {
   ShieldCheck,
   Timer,
   UserRound,
-  Wifi,
   X,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
@@ -46,14 +45,12 @@ type AttendanceChallenge = {
 };
 type VerificationChecks = {
   gps?: boolean;
-  wifi?: boolean;
   distanceM?: number | null;
   accuracyM?: number | null;
   maxAccuracyM?: number;
-  gpsMethod?: "precise" | "contained_uncertainty" | "none";
-  consensusCount?: number;
+  gpsMethod?: "precise" | "standard" | "none";
   spreadM?: number;
-  verificationMethod?: "precise_gps" | "contained_uncertainty" | "office_network";
+  verificationMethod?: "location" | "none";
 };
 
 export function EmployeeDashboard({
@@ -127,8 +124,7 @@ export function EmployeeDashboard({
       setFeedback("You are offline. Attendance needs a live secure connection.");
       return;
     }
-    const canUseOfficeNetworkFallback = profile.branch?.verification_mode === "gps_or_ip";
-    if (!navigator.geolocation && !canUseOfficeNetworkFallback) {
+    if (!navigator.geolocation) {
       setMarkState("error");
       setFeedback("This device does not support location services.");
       return;
@@ -149,46 +145,29 @@ export function EmployeeDashboard({
       const challenge = challengeResult as AttendanceChallenge;
       if (!challenge.challenge_id) throw new Error("The attendance challenge was invalid. Please try again.");
 
-      let captureStartedAt = new Date().toISOString();
-      let captureEndedAt = captureStartedAt;
-      let samples: Awaited<ReturnType<typeof captureBestBrowserLocation>>["samples"] = [];
-      if (navigator.geolocation) {
-        setMarkState("locating");
-        setFeedback("Starting high-accuracy location...");
-        const normalAccuracyM = profile.branch?.max_accuracy_m ?? 80;
-        try {
-          const location = await captureBestBrowserLocation({
-            desiredAccuracyM: normalAccuracyM,
-            maximumAccuracyM: challenge.maximum_accuracy_m ?? Math.max(normalAccuracyM, Math.min(200, normalAccuracyM * 2)),
-            minimumSampleSpanMs: challenge.minimum_sample_span_ms ?? 2_500,
-            maximumWaitMs: 25_000,
-            onProgress: ({ bestAccuracyM, sampleCount, consensusCount }) => {
-              setFeedback(`Checking location consensus... +/-${Math.round(bestAccuracyM)} m, ${consensusCount}/${sampleCount} readings agree`);
-            },
-          });
-          captureStartedAt = location.captureStartedAt;
-          captureEndedAt = location.captureEndedAt;
-          samples = location.samples;
-          setStaffLocation({ latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy, capturedAt: location.capturedAt });
-        } catch (error) {
-          if (!canUseOfficeNetworkFallback) throw error;
-          captureStartedAt = new Date().toISOString();
-          captureEndedAt = captureStartedAt;
-          samples = [];
-          setFeedback("Location is unavailable. Trying the approved office network...");
-        }
-      } else {
-        setFeedback("Location is unavailable. Trying the approved office network...");
-      }
+      setMarkState("locating");
+      setFeedback("Getting your current location...");
+      const normalAccuracyM = profile.branch?.max_accuracy_m ?? 80;
+      const location = await captureBestBrowserLocation({
+        maximumAccuracyM: challenge.maximum_accuracy_m ?? Math.max(200, normalAccuracyM),
+        minimumConsensusSamples: 1,
+        minimumSampleSpanMs: 0,
+        minimumWaitMs: 500,
+        maximumWaitMs: 10_000,
+        onProgress: ({ bestAccuracyM }) => {
+          setFeedback(`Location found with +/-${Math.round(bestAccuracyM)} m accuracy...`);
+        },
+      });
+      setStaffLocation({ latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy, capturedAt: location.capturedAt });
       setMarkState("verifying");
-      setFeedback("Confirming office presence...");
+      setFeedback("Checking that you are inside the office radius...");
       const payload = {
         action,
         challengeId: challenge.challenge_id,
         clientRequestId: crypto.randomUUID(),
-        captureStartedAt,
-        captureEndedAt,
-        samples,
+        captureStartedAt: location.captureStartedAt,
+        captureEndedAt: location.captureEndedAt,
+        samples: location.samples,
       };
       const response = await attendancePost("/api/attendance/mark", payload);
       const result = await response.json().catch(() => ({}));
@@ -238,9 +217,9 @@ export function EmployeeDashboard({
     setFeedback("");
     try {
       const location = await captureBestBrowserLocation({
-        desiredAccuracyM: profile.branch?.max_accuracy_m ?? 80,
-        minimumWaitMs: 2_500,
-        maximumWaitMs: 18_000,
+        maximumAccuracyM: Math.max(200, profile.branch?.max_accuracy_m ?? 80),
+        minimumWaitMs: 500,
+        maximumWaitMs: 10_000,
       });
       setStaffLocation({ latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy, capturedAt: location.capturedAt });
     } catch (error) {
@@ -275,7 +254,7 @@ export function EmployeeDashboard({
             <div className="clock-copy">
               <span className="eyebrow eyebrow-light">TODAY’S ATTENDANCE</span>
               <h2>{nextAction === "clock_in" ? "Ready to start?" : nextAction === "clock_out" ? "You’re on the clock" : "Day complete"}</h2>
-              <p>{nextAction ? profile.branch?.verification_mode === "gps_only" ? "We’ll securely confirm that you are inside the office radius." : profile.branch?.verification_mode === "gps_or_ip" ? "We’ll verify your location or the approved office network." : "We’ll verify both your location and approved office network." : "Your attendance has been safely recorded."}</p>
+              <p>{nextAction ? "We’ll confirm that your current location is inside the office radius." : "Your attendance has been safely recorded."}</p>
               <div className="clock-times">
                 <div><small>Clock in</small><strong>{todayRecord?.clock_in ? formatTimeInZone(todayRecord.clock_in, profile.branch?.timezone) : "—"}</strong></div>
                 <span />
@@ -293,7 +272,7 @@ export function EmployeeDashboard({
           {markState !== "success" && (feedback || Object.keys(checks).length > 0) && <div className={`verification-result ${markState}`}>
             {markState === "error" ? <CircleAlert size={19} /> : <LoaderCircle className="spin" size={19} />}
             <span>{feedback}</span>
-            {checks.distanceM != null ? <small>{checks.distanceM} m away | accuracy +/-{checks.accuracyM ?? "?"} m | consensus {checks.consensusCount ?? "?"} | location {checks.gps ? "passed" : "failed"} | office network {checks.wifi ? "matched" : "not matched"}</small> : checks.wifi !== undefined && <small>Location unavailable | office network {checks.wifi ? "matched" : "not matched"}</small>}
+            {checks.distanceM != null && <small>{checks.distanceM} m from office centre | accuracy +/-{checks.accuracyM ?? "?"} m | location {checks.gps ? "inside radius" : "outside radius"}</small>}
           </div>}
         </section>
 
@@ -306,7 +285,7 @@ export function EmployeeDashboard({
 
         <section className="verification-strip" aria-label="Attendance verification information">
           <div><span className="soft-icon"><MapPin size={18} /></span><div><strong>{profile.branch?.radius_m || 200} m attendance zone</strong><small>Any verified point inside the radius is accepted</small></div></div>
-          <div><span className="soft-icon"><Wifi size={18} /></span><div><strong>Office public IP</strong><small>{profile.branch?.verification_mode === "gps_only" ? "Not required" : "Securely checked by the server"}</small></div></div>
+          <div><span className="soft-icon"><ShieldCheck size={18} /></span><div><strong>Location only</strong><small>No office Wi-Fi, IP address or SSID is required</small></div></div>
           <div><span className="soft-icon"><ShieldCheck size={18} /></span><div><strong>Protected</strong><small>Every attempt is audited</small></div></div>
         </section>
 
@@ -341,7 +320,7 @@ export function EmployeeDashboard({
         <Link href="/profile"><UserRound size={20} /><span>Profile</span></Link>
       </nav>
 
-      {pendingAction && <AttendanceConfirmation action={pendingAction} branchName={profile.branch?.name || "your assigned branch"} verificationMode={profile.branch?.verification_mode || "gps_only"} onCancel={() => setPendingAction(null)} onConfirm={() => markAttendance(pendingAction)} />}
+      {pendingAction && <AttendanceConfirmation action={pendingAction} branchName={profile.branch?.name || "your assigned branch"} onCancel={() => setPendingAction(null)} onConfirm={() => markAttendance(pendingAction)} />}
       {successReceipt && <AttendanceSuccess
         receipt={successReceipt}
         firstName={firstName}
@@ -371,18 +350,16 @@ function EmptyState({ icon, title, text }: { icon: React.ReactNode; title: strin
 function AttendanceConfirmation({
   action,
   branchName,
-  verificationMode,
   onCancel,
   onConfirm,
 }: {
   action: AttendanceAction;
   branchName: string;
-  verificationMode: "gps_and_ip" | "gps_or_ip" | "gps_only";
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const isClockIn = action === "clock_in";
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}><div className="modal attendance-confirmation" role="dialog" aria-modal="true" aria-labelledby="attendance-confirmation-title"><div className="modal-head"><div><span className="eyebrow">CONFIRM ATTENDANCE</span><h2 id="attendance-confirmation-title">{isClockIn ? "Clock in now?" : "Clock out now?"}</h2><p>{isClockIn ? `Start your workday at ${branchName}.` : `Finish your workday at ${branchName}.`}</p></div><button className="icon-button bordered" onClick={onCancel} aria-label="Cancel"><X size={20} /></button></div><div className="confirmation-checks"><div><MapPin size={18} /><span><strong>Live location</strong><small>{verificationMode === "gps_or_ip" ? "We will try fresh location readings first and can fall back to the approved office network." : "We will collect several fresh readings and verify that you are inside the branch radius."}</small></span></div>{verificationMode !== "gps_only" && <div><Wifi size={18} /><span><strong>Office network</strong><small>{verificationMode === "gps_and_ip" ? "This branch requires the approved office internet connection together with location." : "The approved office internet can verify attendance if location is unavailable."}</small></span></div>}<div><ShieldCheck size={18} /><span><strong>Secure verification</strong><small>Successful and denied attempts are securely audited for attendance integrity.</small></span></div></div><div className="modal-actions"><button type="button" className="button button-ghost" onClick={onCancel}>Cancel</button><button type="button" className="button button-primary" onClick={onConfirm}>{isClockIn ? "Verify and clock in" : "Verify and clock out"}</button></div></div></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}><div className="modal attendance-confirmation" role="dialog" aria-modal="true" aria-labelledby="attendance-confirmation-title"><div className="modal-head"><div><span className="eyebrow">CONFIRM ATTENDANCE</span><h2 id="attendance-confirmation-title">{isClockIn ? "Clock in now?" : "Clock out now?"}</h2><p>{isClockIn ? `Start your workday at ${branchName}.` : `Finish your workday at ${branchName}.`}</p></div><button className="icon-button bordered" onClick={onCancel} aria-label="Cancel"><X size={20} /></button></div><div className="confirmation-checks"><div><MapPin size={18} /><span><strong>Current location</strong><small>We will get one fresh location reading and confirm it is inside the branch radius.</small></span></div><div><ShieldCheck size={18} /><span><strong>Location-only verification</strong><small>No office Wi-Fi, IP address or SSID is collected or required.</small></span></div></div><div className="modal-actions"><button type="button" className="button button-ghost" onClick={onCancel}>Cancel</button><button type="button" className="button button-primary" onClick={onConfirm}>{isClockIn ? "Verify and clock in" : "Verify and clock out"}</button></div></div></div>;
 }
 
 function AttendanceSuccess({

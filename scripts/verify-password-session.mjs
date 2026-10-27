@@ -58,8 +58,6 @@ try {
   if (!passwordResponse.ok) throw new Error(`Password route failed (${passwordResponse.status}): ${await passwordResponse.text()}`);
   storeResponseCookies(passwordResponse, jar);
 
-  const protectedResponse = await fetch("http://localhost:3000/api/network-info", { headers: { cookie: cookieHeader(jar) } });
-  if (!protectedResponse.ok) throw new Error(`Session was invalid after password change (${protectedResponse.status}).`);
   const employeePage = await fetch("http://localhost:3000/app", { headers: { cookie: cookieHeader(jar) }, redirect: "manual" });
   const employeeHtml = await employeePage.text();
   if (employeePage.status !== 200 || !employeeHtml.includes("ios-shell") || !employeeHtml.includes("LIVE OFFICE MAP")) {

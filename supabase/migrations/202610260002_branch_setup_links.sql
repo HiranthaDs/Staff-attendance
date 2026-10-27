@@ -6,7 +6,7 @@ create table if not exists public.branch_setup_invites (
   proposed_name text not null check (char_length(proposed_name) between 2 and 80),
   proposed_code text not null check (proposed_code ~ '^[A-Z0-9-]{2,8}$'),
   radius_m integer not null default 200 check (radius_m between 50 and 1000),
-  verification_mode public.verification_mode not null default 'gps_and_ip',
+  verification_mode public.verification_mode not null default 'gps_only',
   status text not null default 'pending' check (status in ('pending', 'submitted', 'approved', 'revoked', 'expired')),
   expires_at timestamptz not null,
   created_by uuid not null references public.profiles(id) on delete cascade,
@@ -140,13 +140,8 @@ begin
     name, code, address, latitude, longitude, radius_m, verification_mode, created_by
   ) values (
     invite.proposed_name, invite.proposed_code, submission.address, submission.latitude,
-    submission.longitude, invite.radius_m, invite.verification_mode, p_admin_id
+    submission.longitude, invite.radius_m, 'gps_only', p_admin_id
   ) returning * into result;
-
-  if invite.verification_mode <> 'gps_only' then
-    insert into public.branch_networks (branch_id, label, ip_rule)
-    values (result.id, submission.wifi_name || ' · captured setup IP', submission.public_ip);
-  end if;
 
   update public.branch_setup_submissions
   set created_branch_id = result.id, reviewed_by = p_admin_id, reviewed_at = now()

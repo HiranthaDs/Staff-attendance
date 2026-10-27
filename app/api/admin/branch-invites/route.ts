@@ -7,7 +7,6 @@ const schema = z.object({
   proposed_name: z.string().trim().min(2).max(80),
   proposed_code: z.string().trim().min(2).max(8).regex(/^[a-zA-Z0-9-]+$/),
   radius_m: z.coerce.number().int().min(50).max(1000),
-  verification_mode: z.enum(["gps_and_ip", "gps_or_ip", "gps_only"]),
   expires_in_hours: z.coerce.number().int().min(1).max(168).default(48),
 });
 
@@ -38,7 +37,7 @@ export async function POST(request: Request) {
     proposed_name: input.proposed_name,
     proposed_code: code,
     radius_m: input.radius_m,
-    verification_mode: input.verification_mode,
+    verification_mode: "gps_only",
     expires_at: expiresAt,
     created_by: actor.user.id,
   }).select("id, proposed_name, proposed_code, radius_m, verification_mode, status, expires_at, created_at").single();

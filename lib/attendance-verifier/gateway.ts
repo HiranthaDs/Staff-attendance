@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { PostgrestError } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -59,14 +58,10 @@ function assertCompatibilityChallenge(payload: Record<string, unknown>) {
   if (action !== "clock_in" && action !== "clock_out") {
     throw new AttendanceStorageError("attendance action is invalid", 400, "INVALID_PAYLOAD");
   }
-  const clientIp = typeof payload.p_client_ip === "string" && payload.p_client_ip
-    ? payload.p_client_ip
-    : null;
   const challengeState = verifyCompatibilityChallenge(challengeId, {
     userId,
     branchId,
     action,
-    ipHash: clientIp ? createHash("sha256").update(clientIp, "ascii").digest("hex") : null,
   }, { ttlSeconds: challengeTtlSeconds() });
   if (challengeState === "expired") {
     throw new AttendanceStorageError("attendance compatibility challenge expired", 409, "CHALLENGE_EXPIRED");
@@ -74,7 +69,7 @@ function assertCompatibilityChallenge(payload: Record<string, unknown>) {
   if (challengeState !== "valid") {
     throw new AttendanceStorageError("attendance compatibility challenge is invalid", 409, "CHALLENGE_NOT_FOUND");
   }
-  return { userId, branchId, action, clientIp };
+  return { userId, branchId, action };
 }
 
 export type AttendanceProfileContext = {
@@ -94,25 +89,15 @@ export type AttendanceBranchContext = {
   longitude: number;
   radius_m: number;
   timezone: string;
-  verification_mode: "gps_and_ip" | "gps_or_ip" | "gps_only";
   max_accuracy_m: number;
   late_grace_minutes: number;
   early_leave_grace_minutes: number;
   active: boolean;
 };
 
-export type AttendanceNetworkContext = {
-  id: string;
-  branch_id: string;
-  label: string;
-  ip_rule: string;
-  active: boolean;
-};
-
 export type AttendanceContext = {
   profile: AttendanceProfileContext;
   branch: AttendanceBranchContext | null;
-  networks: AttendanceNetworkContext[];
 };
 
 export class AttendanceStorageError extends Error {
@@ -150,17 +135,17 @@ export class AttendanceGateway {
     if (profileResult.error) throw storageError(profileResult.error, profileResult.status);
     if (!profileResult.data) return null;
     const profile = profileResult.data as AttendanceProfileContext;
-    if (!profile.branch_id) return { profile, branch: null, networks: [] };
+    if (!profile.branch_id) return { profile, branch: null };
 
     let branchResult = await this.client
       .from("branches")
-      .select("id, name, latitude, longitude, radius_m, timezone, verification_mode, max_accuracy_m, late_grace_minutes, early_leave_grace_minutes, active")
+      .select("id, name, latitude, longitude, radius_m, timezone, max_accuracy_m, late_grace_minutes, early_leave_grace_minutes, active")
       .eq("id", profile.branch_id)
       .maybeSingle();
     if (isMigrationError(branchResult.error)) {
       const legacyBranchResult = await this.client
         .from("branches")
-        .select("id, name, latitude, longitude, radius_m, timezone, verification_mode, max_accuracy_m, late_grace_minutes, active")
+        .select("id, name, latitude, longitude, radius_m, timezone, max_accuracy_m, late_grace_minutes, active")
         .eq("id", profile.branch_id)
         .maybeSingle();
       branchResult = {
@@ -170,17 +155,10 @@ export class AttendanceGateway {
           : null,
       } as typeof branchResult;
     }
-    const networkResult = await this.client
-      .from("branch_networks")
-      .select("id, branch_id, label, ip_rule, active")
-      .eq("branch_id", profile.branch_id)
-      .eq("active", true);
     if (branchResult.error) throw storageError(branchResult.error, branchResult.status);
-    if (networkResult.error) throw storageError(networkResult.error, networkResult.status);
     return {
       profile,
       branch: branchResult.data as AttendanceBranchContext | null,
-      networks: (networkResult.data ?? []) as AttendanceNetworkContext[],
     };
   }
 
@@ -188,7 +166,6 @@ export class AttendanceGateway {
     userId: string;
     branchId: string;
     action: "clock_in" | "clock_out";
-    ipHash: string | null;
     expiresAt: Date;
   }) {
     const challengeId = crypto.randomUUID();
@@ -198,7 +175,7 @@ export class AttendanceGateway {
       branch_id: input.branchId,
       action: input.action,
       request_id: challengeId,
-      ip_hash: input.ipHash,
+      ip_hash: null,
       expires_at: input.expiresAt.toISOString(),
     }).select("id, expires_at").single();
     if (isMigrationError(result.error)) {
@@ -210,7 +187,6 @@ export class AttendanceGateway {
             userId: input.userId,
             branchId: input.branchId,
             action: input.action,
-            ipHash: input.ipHash,
           }, issuedAt),
           expires_at: input.expiresAt.toISOString(),
         };
@@ -225,7 +201,7 @@ export class AttendanceGateway {
   async recordMark(payload: Record<string, unknown>, attendanceDate: string) {
     const result = await this.client.rpc("record_attendance_mark_v2", payload);
     if (isMigrationError(result.error)) {
-      const { userId, branchId, action, clientIp } = assertCompatibilityChallenge(payload);
+      const { userId, branchId, action } = assertCompatibilityChallenge(payload);
 
       const legacyResult = await this.client.rpc("record_attendance_mark", {
         p_user_id: userId,
@@ -237,7 +213,7 @@ export class AttendanceGateway {
         p_longitude: payload.p_longitude,
         p_accuracy_m: payload.p_accuracy_m,
         p_distance_m: payload.p_distance_m,
-        p_client_ip: clientIp,
+        p_client_ip: null,
         p_gps_passed: payload.p_gps_passed,
         p_ip_passed: payload.p_ip_passed,
         p_status: payload.p_status,

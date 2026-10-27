@@ -54,7 +54,8 @@ assert.throws(() => buildConsensus(futureSamples, { now }), /future/);
 assert.equal(evaluateGeofence({ distanceFromBranchM: 199, effectiveAccuracyM: 20, radiusM: 200, maxAccuracyM: 80 }).allowed, true);
 assert.equal(evaluateGeofence({ distanceFromBranchM: 201, effectiveAccuracyM: 20, radiusM: 200, maxAccuracyM: 80 }).allowed, false);
 assert.equal(evaluateGeofence({ distanceFromBranchM: 20, effectiveAccuracyM: 120, radiusM: 200, maxAccuracyM: 80 }).allowed, true);
-assert.equal(evaluateGeofence({ distanceFromBranchM: 100, effectiveAccuracyM: 120, radiusM: 200, maxAccuracyM: 80 }).allowed, false);
+assert.equal(evaluateGeofence({ distanceFromBranchM: 100, effectiveAccuracyM: 120, radiusM: 200, maxAccuracyM: 80 }).allowed, true);
+assert.equal(evaluateGeofence({ distanceFromBranchM: 100, effectiveAccuracyM: 201, radiusM: 200, maxAccuracyM: 80 }).allowed, false);
 assert.ok(distanceM(0, 0, 0.001, 0) > 111);
 assert.ok(new GpsEvidenceError("test") instanceof Error);
 
@@ -67,7 +68,6 @@ const binding = {
   userId: "0ad4fd1f-2936-43ba-b7b8-00b14824ce7b",
   branchId: "20b2577b-cafc-464e-9496-e95027747519",
   action: "clock_in" as const,
-  ipHash: "c3f1a341c2a1109df9fd3190f45691bdb90ca2a0a129baa8236474236939f607",
 };
 const compatibilityChallenge = createCompatibilityChallenge(binding, now);
 assert.match(compatibilityChallenge, /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);

@@ -12,7 +12,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
         <div className="auth-proof">
           <span className="proof-dot" />
-          <div><strong>Secure by design</strong><small>Location + office network verification</small></div>
+          <div><strong>Simple and reliable</strong><small>Location inside the office radius</small></div>
         </div>
       </section>
       <section className="auth-panel">{children}</section>

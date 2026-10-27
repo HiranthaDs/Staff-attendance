@@ -25,7 +25,7 @@ try {
   if (!users[0]) throw new Error("Super-admin auth user was not found.");
   const userId = users[0].id;
   const { rows: branches } = await client.query(
-    "insert into public.branches (name, code, address, latitude, longitude, verification_mode) values ($1, $2, $3, 6.927079, 79.861244, 'gps_and_ip') returning id",
+    "insert into public.branches (name, code, address, latitude, longitude, verification_mode) values ($1, $2, $3, 6.927079, 79.861244, 'gps_only') returning id",
     [`Transaction Test ${Date.now()}`, `T${String(Date.now()).slice(-7)}`, "Rollback-only test branch"],
   );
   const branchId = branches[0].id;

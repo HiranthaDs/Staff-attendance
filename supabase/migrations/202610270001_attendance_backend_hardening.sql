@@ -367,7 +367,7 @@ begin
       or p_longitude is null or p_longitude not between -180 and 180
       or p_accuracy_m is null or p_accuracy_m <= 0 or p_accuracy_m > 1000
       or p_distance_m is null or p_distance_m < 0
-      or p_sample_count < 3 or p_sample_span_ms < 1500 then
+      or p_sample_count < 1 or p_sample_span_ms < 0 then
       raise exception 'GPS_EVIDENCE_INVALID';
     end if;
 
@@ -386,20 +386,13 @@ begin
     if abs(v_computed_distance_m - p_distance_m) > 5 then
       raise exception 'GPS_DISTANCE_MISMATCH';
     end if;
-    if not (
-      (p_accuracy_m <= v_branch.max_accuracy_m
-        and v_computed_distance_m <= v_branch.radius_m)
-      or
-      (p_accuracy_m <= greatest(v_branch.max_accuracy_m, least(200, v_branch.max_accuracy_m * 2))
-        and v_computed_distance_m + p_accuracy_m <= v_branch.radius_m)
-    ) then
+    if p_accuracy_m > greatest(v_branch.max_accuracy_m, 200)
+      or v_computed_distance_m > v_branch.radius_m then
       raise exception 'GPS_OUTSIDE_BRANCH_RADIUS';
     end if;
   end if;
 
-  if (v_branch.verification_mode = 'gps_and_ip' and not (p_gps_passed and p_ip_passed))
-    or (v_branch.verification_mode = 'gps_or_ip' and not (p_gps_passed or p_ip_passed))
-    or (v_branch.verification_mode = 'gps_only' and not p_gps_passed) then
+  if not p_gps_passed then
     raise exception 'PRESENCE_NOT_VERIFIED';
   end if;
 

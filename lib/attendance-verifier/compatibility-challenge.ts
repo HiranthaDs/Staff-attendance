@@ -1,13 +1,12 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
-const CHALLENGE_CONTEXT = "presence-attendance-compatibility-v1";
+const CHALLENGE_CONTEXT = "presence-attendance-location-v2";
 const UUID_HEX_LENGTH = 32;
 
 export type CompatibilityChallengeBinding = {
   userId: string;
   branchId: string;
   action: "clock_in" | "clock_out";
-  ipHash: string | null;
 };
 
 function challengeSecret() {
@@ -26,8 +25,6 @@ function signature(header: Uint8Array, binding: CompatibilityChallengeBinding) {
     .update(binding.branchId, "utf8")
     .update("\0", "utf8")
     .update(binding.action, "utf8")
-    .update("\0", "utf8")
-    .update(binding.ipHash || "", "ascii")
     .digest();
 }
 

@@ -12,7 +12,7 @@ export default async function AdminPage() {
   const branchFilter = profile.role === "branch_admin" ? profile.branch_id : null;
 
   let staffQuery = supabase.from("profiles").select("*, branch:branches(*)").neq("role", "super_admin").order("full_name");
-  let branchesQuery = supabase.from("branches").select("*, branch_networks(*)").order("name");
+  let branchesQuery = supabase.from("branches").select("*").order("name");
   let attendanceQuery = supabase.from("attendance_records").select("*, profile:profiles(full_name, employee_code), branch:branches(name, code)").gte("attendance_date", `${today.slice(0, 7)}-01`).order("clock_in", { ascending: false }).limit(250);
   const leaveQuery = supabase.from("leave_requests").select("*, profile:profiles(full_name, employee_code, branch_id)").order("created_at", { ascending: false }).limit(100);
   const setupInvitesQuery = supabase.from("branch_setup_invites").select("id, proposed_name, proposed_code, radius_m, verification_mode, status, expires_at, created_at, submitted_at, approved_at").order("created_at", { ascending: false }).limit(100);

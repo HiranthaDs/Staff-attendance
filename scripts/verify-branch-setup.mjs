@@ -29,7 +29,7 @@ try {
   const inviteResponse = await fetch("http://localhost:3000/api/admin/branch-invites", {
     method: "POST",
     headers: adminHeaders,
-    body: JSON.stringify({ proposed_name: `Flow Test ${suffix}`, proposed_code: `T${suffix}`, radius_m: 200, verification_mode: "gps_and_ip", expires_in_hours: 1 }),
+    body: JSON.stringify({ proposed_name: `Flow Test ${suffix}`, proposed_code: `T${suffix}`, radius_m: 200, expires_in_hours: 1 }),
   });
   const inviteResult = await inviteResponse.json();
   if (!inviteResponse.ok) throw new Error(`Invite API failed: ${inviteResult.error}`);
@@ -51,16 +51,9 @@ try {
       captured_at: new Date().toISOString(),
       evidence_latitude: 6.927079,
       evidence_longitude: 79.861244,
-      sample_count: 4,
-      consensus_count: 4,
-      spread_m: 2,
-      expected_public_ip: readResult.public_ip,
-      wifi_name: "Verification WiFi",
-      connection_type: "wifi",
-      effective_type: "4g",
-      downlink_mbps: 25,
-      rtt_ms: 20,
-      save_data: false,
+      sample_count: 1,
+      consensus_count: 1,
+      spread_m: 0,
       device_info: { platform: "verification-script" },
       manager_name: "Verification Manager",
       manager_phone: "+94 77 000 0000",
@@ -74,8 +67,8 @@ try {
   const approvalResult = await approvalResponse.json();
   if (!approvalResponse.ok) throw new Error(`Approval API failed: ${approvalResult.error}`);
   branchId = approvalResult.branch.id;
-  if (approvalResult.branch.branch_networks?.[0]?.ip_rule !== "127.0.0.1") throw new Error("Captured server IP was not attached to the branch.");
-  process.stdout.write("Branch setup verification passed: generated, captured, approved and network-linked.\n");
+  if (approvalResult.branch.verification_mode !== "gps_only") throw new Error("Approved branch did not use location-only attendance.");
+  process.stdout.write("Branch setup verification passed: generated, location captured and approved.\n");
 } finally {
   if (branchId) await service.from("branches").delete().eq("id", branchId);
   if (inviteId) await service.from("branch_setup_invites").delete().eq("id", inviteId);

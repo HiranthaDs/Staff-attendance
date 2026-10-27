@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { resolveRequestIp } from "@/lib/attendance";
 import { AttendanceStorageError } from "@/lib/attendance-verifier/gateway";
 import {
   AttendanceServiceError,
@@ -41,13 +40,12 @@ const DATABASE_MESSAGES: Record<string, [number, string]> = {
   CHALLENGE_NOT_FOUND: [409, "The attendance check is no longer available. Please start again."],
   CLOCK_IN_REQUIRED: [409, "Clock in before trying to clock out, or this workday is already complete."],
   CLOCK_IN_REQUIRED_OR_ALREADY_CLOSED: [409, "Clock in before trying to clock out, or this workday is already complete."],
-  IP_ALREADY_USED_BY_ANOTHER_EMPLOYEE: [409, "This non-office internet address was already used by another employee today. Connect to the approved office network or contact an administrator."],
   IDEMPOTENCY_CONFLICT: [409, "This attendance request conflicts with an earlier request. Start a new check."],
   EMPLOYEE_INACTIVE_OR_NOT_FOUND: [403, "This employee account is not active."],
   BRANCH_INACTIVE_OR_NOT_FOUND: [403, "The assigned branch is not active."],
   PASSWORD_RESET_REQUIRED: [403, "Reset the temporary password before marking attendance."],
   GPS_DISTANCE_MISMATCH: [403, "Location evidence failed the server check. Capture your location again."],
-  GPS_EVIDENCE_INVALID: [403, "Location evidence was not strong enough. Keep the device still and try again."],
+  GPS_EVIDENCE_INVALID: [403, "A fresh location could not be verified. Enable precise location and try again."],
   GPS_OUTSIDE_BRANCH_RADIUS: [403, "Your verified location is outside the branch attendance radius."],
   "42703": [503, "Attendance database setup is incomplete. Ask an administrator to apply the latest migration."],
   PGRST202: [503, "Attendance database setup is incomplete. Ask an administrator to apply the latest migration."],
@@ -61,13 +59,8 @@ export async function callAttendanceBackend(
   path: "/v1/attendance/challenge" | "/v1/attendance/mark",
   payload: Record<string, unknown>,
 ) {
-  const ipEvidence = await resolveRequestIp(request.headers, {
-    allowLocalEgressFallback: process.env.LOCAL_ATTENDANCE_EGRESS_FALLBACK === "true"
-      || process.env.NODE_ENV === "development",
-  });
   const envelope = {
     actorUserId,
-    ipEvidence,
     userAgent: request.headers.get("user-agent")?.slice(0, 500) || null,
   };
 

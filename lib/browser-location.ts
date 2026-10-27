@@ -36,7 +36,6 @@ export type LocationCaptureProgress = {
 };
 
 type CaptureOptions = {
-  desiredAccuracyM: number;
   maximumAccuracyM?: number;
   minimumConsensusSamples?: number;
   minimumSampleSpanMs?: number;
@@ -124,11 +123,10 @@ export function captureBestBrowserLocation(
   options: CaptureOptions,
   geolocation: GeolocationLike = navigator.geolocation,
 ): Promise<CapturedBrowserLocation> {
-  const desiredAccuracyM = Math.max(1, options.desiredAccuracyM);
-  const minimumConsensusSamples = Math.max(2, options.minimumConsensusSamples ?? 3);
-  const minimumSampleSpanMs = Math.max(0, options.minimumSampleSpanMs ?? 2_500);
-  const minimumWaitMs = Math.max(1_500, options.minimumWaitMs ?? 6_000);
-  const maximumWaitMs = Math.max(minimumWaitMs + 2_000, options.maximumWaitMs ?? 25_000);
+  const minimumConsensusSamples = Math.max(1, options.minimumConsensusSamples ?? 1);
+  const minimumSampleSpanMs = Math.max(0, options.minimumSampleSpanMs ?? 0);
+  const minimumWaitMs = Math.max(500, options.minimumWaitMs ?? 1_500);
+  const maximumWaitMs = Math.max(minimumWaitMs + 2_000, options.maximumWaitMs ?? 15_000);
   const pollIntervalMs = Math.max(2_000, options.pollIntervalMs ?? 3_000);
 
   return new Promise((resolve, reject) => {
@@ -163,7 +161,7 @@ export function captureBestBrowserLocation(
         return;
       }
       if (consensus.consensusCount < minimumConsensusSamples) {
-        if (atDeadline) fail(`Only ${consensus.consensusCount} matching location reading${consensus.consensusCount === 1 ? " was" : "s were"} received. Keep the device still and retry.`);
+        if (atDeadline) fail("A fresh location reading was not available. Enable precise location and try again.");
         return;
       }
       const consensusSamples = samples.filter((sample) => samplesAgree(consensus.position, sample));
@@ -173,7 +171,6 @@ export function captureBestBrowserLocation(
         return;
       }
       if (!atDeadline && Date.now() - startedAt < minimumWaitMs) return;
-      if (!atDeadline && consensus.position.coords.accuracy > desiredAccuracyM) return;
       if (options.maximumAccuracyM !== undefined && consensus.position.coords.accuracy > options.maximumAccuracyM) {
         if (atDeadline) fail(`The stable location reading was +/-${Math.round(consensus.position.coords.accuracy)} m. Move to an open area and try again.`);
         return;

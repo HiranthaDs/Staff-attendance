@@ -31,7 +31,7 @@ create table if not exists public.branches (
   longitude double precision not null check (longitude between -180 and 180),
   radius_m integer not null default 200 check (radius_m between 50 and 1000),
   timezone text not null default 'Asia/Colombo',
-  verification_mode public.verification_mode not null default 'gps_and_ip',
+  verification_mode public.verification_mode not null default 'gps_only',
   max_accuracy_m integer not null default 80 check (max_accuracy_m between 10 and 250),
   late_grace_minutes integer not null default 10 check (late_grace_minutes between 0 and 120),
   early_leave_grace_minutes integer not null default 10 check (early_leave_grace_minutes between 0 and 120),

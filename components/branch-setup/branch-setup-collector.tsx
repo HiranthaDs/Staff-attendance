@@ -9,10 +9,8 @@ import {
   LoaderCircle,
   LockKeyhole,
   MapPin,
-  Router,
   ShieldCheck,
   Smartphone,
-  Wifi,
 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { MapPicker } from "@/components/admin/map-picker";
@@ -23,17 +21,9 @@ type Invite = {
   proposed_name: string;
   proposed_code: string;
   radius_m: number;
-  verification_mode: "gps_and_ip" | "gps_or_ip" | "gps_only";
+  verification_mode: "gps_only";
   status: string;
   expires_at: string;
-};
-
-type NetworkInfo = {
-  type?: string;
-  effectiveType?: string;
-  downlink?: number;
-  rtt?: number;
-  saveData?: boolean;
 };
 
 type OfficePin = {
@@ -43,8 +33,6 @@ type OfficePin = {
 
 export function BranchSetupCollector({ token }: { token: string }) {
   const [invite, setInvite] = useState<Invite | null>(null);
-  const [publicIp, setPublicIp] = useState<string | null>(null);
-  const [publicIpSource, setPublicIpSource] = useState("");
   const [location, setLocation] = useState<CapturedBrowserLocation | null>(null);
   const [officePin, setOfficePin] = useState<OfficePin | null>(null);
   const [address, setAddress] = useState("");
@@ -62,8 +50,6 @@ export function BranchSetupCollector({ token }: { token: string }) {
       .then(({ ok, json }) => {
         if (!ok) throw new Error(json.error);
         setInvite(json.invite);
-        setPublicIp(json.public_ip);
-        setPublicIpSource(json.public_ip_source || "");
         if (json.invite.status === "submitted" || json.invite.status === "approved") setSubmitted(true);
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "This setup link is unavailable."))
@@ -72,40 +58,29 @@ export function BranchSetupCollector({ token }: { token: string }) {
 
   async function captureOffice() {
     setError("");
-    if (!navigator.onLine) return setError("Connect to the office internet and try again.");
+    if (!navigator.onLine) return setError("Connect to the internet and try again.");
     if (!navigator.geolocation) return setError("This browser does not support location capture.");
     setCapturing(true);
-    setCaptureHint("Keep the phone still while several fresh readings are compared...");
+    setCaptureHint("Getting a fresh location reading...");
 
     try {
       const best = await captureBestBrowserLocation({
-        desiredAccuracyM: 35,
-        maximumAccuracyM: 150,
-        minimumWaitMs: 6_000,
-        maximumWaitMs: 30_000,
-        onProgress: ({ bestAccuracyM, sampleCount, consensusCount }) => {
-          setCaptureHint(`Checking location... +/-${Math.round(bestAccuracyM)} m, ${consensusCount}/${sampleCount} readings agree.`);
+        maximumAccuracyM: 200,
+        minimumConsensusSamples: 1,
+        minimumSampleSpanMs: 0,
+        minimumWaitMs: 1_000,
+        maximumWaitMs: 15_000,
+        onProgress: ({ bestAccuracyM }) => {
+          setCaptureHint(`Location found with +/-${Math.round(bestAccuracyM)} m accuracy.`);
         },
       });
       setLocation(best);
       setOfficePin({ latitude: best.latitude, longitude: best.longitude });
-      setCaptureHint(`${best.consensusCount}/${best.sampleCount} readings agree within ${best.spreadM} m: +/-${Math.round(best.accuracy)} m accuracy.`);
+      setCaptureHint(`Location captured with +/-${Math.round(best.accuracy)} m accuracy.`);
       const geocodeRequestId = ++geocodeRequestRef.current;
-      const [networkResponse, addressResponse] = await Promise.all([
-        fetch(`/api/branch-setup/${token}`).then(async (response) => {
-          const json = await response.json();
-          if (!response.ok) throw new Error(json.error || "The office public IP could not be checked.");
-          return json;
-        }),
-        fetch(`/api/branch-setup/reverse-geocode?lat=${best.latitude}&lng=${best.longitude}`)
-          .then((response) => response.ok ? response.json() : { address: "" })
-          .catch(() => ({ address: "" })),
-      ]);
-      if (!networkResponse.public_ip || !networkResponse.public_ip_verified) {
-        throw new Error("The public IP could not be verified. Connect only to office Wi-Fi, disable VPN/mobile data, and retry.");
-      }
-      setPublicIp(networkResponse.public_ip || null);
-      setPublicIpSource(networkResponse.public_ip_source || "");
+      const addressResponse = await fetch(`/api/branch-setup/reverse-geocode?lat=${best.latitude}&lng=${best.longitude}`)
+        .then((response) => response.ok ? response.json() : { address: "" })
+        .catch(() => ({ address: "" }));
       if (geocodeRequestId === geocodeRequestRef.current && addressResponse.address) setAddress(String(addressResponse.address).slice(0, 300));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The office location could not be captured.");
@@ -135,13 +110,14 @@ export function BranchSetupCollector({ token }: { token: string }) {
     setError("");
     const form = new FormData(event.currentTarget);
     try {
-      setCaptureHint("Rechecking location consensus before secure submission...");
+      setCaptureHint("Rechecking the office location before submission...");
       const evidence = await captureBestBrowserLocation({
-        desiredAccuracyM: 50,
-        maximumAccuracyM: 150,
-        minimumWaitMs: 5_000,
-        maximumWaitMs: 25_000,
-        onProgress: ({ bestAccuracyM, sampleCount, consensusCount }) => setCaptureHint(`Final check: +/-${Math.round(bestAccuracyM)} m, ${consensusCount}/${sampleCount} readings agree.`),
+        maximumAccuracyM: 200,
+        minimumConsensusSamples: 1,
+        minimumSampleSpanMs: 0,
+        minimumWaitMs: 1_000,
+        maximumWaitMs: 15_000,
+        onProgress: ({ bestAccuracyM }) => setCaptureHint(`Final location accuracy: +/-${Math.round(bestAccuracyM)} m.`),
       });
       setLocation(evidence);
 
@@ -150,19 +126,6 @@ export function BranchSetupCollector({ token }: { token: string }) {
         throw new Error("The selected office pin does not match your current location. Return to the office or correct the map pin.");
       }
 
-      const networkResponse = await fetch(`/api/branch-setup/${token}`);
-      const networkResult = await networkResponse.json().catch(() => ({}));
-      if (!networkResponse.ok || !networkResult.public_ip) {
-        throw new Error(networkResult.error || "The office public IP could not be verified.");
-      }
-      const finalPublicIp = String(networkResult.public_ip);
-      if (publicIp && finalPublicIp !== publicIp) {
-        throw new Error("The internet connection changed after capture. Reconnect to the office Wi-Fi and capture again.");
-      }
-      setPublicIp(finalPublicIp);
-      setPublicIpSource(networkResult.public_ip_source || "");
-
-      const connection = getNetworkInformation();
       const response = await fetch(`/api/branch-setup/${token}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -177,16 +140,9 @@ export function BranchSetupCollector({ token }: { token: string }) {
           sample_count: evidence.sampleCount,
           consensus_count: evidence.consensusCount,
           spread_m: evidence.spreadM,
-          expected_public_ip: finalPublicIp,
-          wifi_name: form.get("wifi_name"),
           manager_name: form.get("manager_name"),
           manager_phone: form.get("manager_phone"),
           notes: form.get("notes") || null,
-          connection_type: connection.type || null,
-          effective_type: connection.effectiveType || null,
-          downlink_mbps: connection.downlink ?? null,
-          rtt_ms: connection.rtt ?? null,
-          save_data: connection.saveData ?? null,
           device_info: await collectDeviceInfo({
             initialLocation: location,
             finalEvidence: evidence,
@@ -220,13 +176,13 @@ export function BranchSetupCollector({ token }: { token: string }) {
         <section className="setup-intro">
           <span className="eyebrow">BRANCH DETAIL COLLECTION</span>
           <h1>Set up {invite.proposed_name}</h1>
-          <p>Connect to the office Wi-Fi, stand inside the office, then capture the location and internet details from this device.</p>
+          <p>Stand inside the office and capture its location from this device. No Wi-Fi name or IP address is needed.</p>
           <div className="setup-meta"><span><Building2 size={15} /> {invite.proposed_code}</span><span><MapPin size={15} /> {invite.radius_m} m attendance zone</span><span><ShieldCheck size={15} /> Expires {new Date(invite.expires_at).toLocaleString()}</span></div>
         </section>
 
         <section className="capture-card">
-          <div className="capture-card-copy"><span className="capture-number">1</span><div><h2>Capture office details</h2><p>Turn off VPN and mobile data, connect to office Wi-Fi, and allow precise location.</p></div></div>
-          <button className="capture-button" onClick={captureOffice} disabled={capturing || saving}>{capturing ? <LoaderCircle className="spin" size={24} /> : <Crosshair size={24} />}<span><strong>{capturing ? "Improving accuracy…" : location ? "Capture again" : "Capture automatically"}</strong><small>GPS + public IP + network + device</small></span></button>
+          <div className="capture-card-copy"><span className="capture-number">1</span><div><h2>Capture office details</h2><p>Allow precise location while standing inside the office.</p></div></div>
+          <button className="capture-button" onClick={captureOffice} disabled={capturing || saving}>{capturing ? <LoaderCircle className="spin" size={24} /> : <Crosshair size={24} />}<span><strong>{capturing ? "Getting location…" : location ? "Capture again" : "Capture location"}</strong><small>Current location only</small></span></button>
           {captureHint && <div className="capture-hint"><ShieldCheck size={17} /> {captureHint}</div>}
           {error && <div className="form-alert error"><CircleAlert size={17} /> {error}</div>}
         </section>
@@ -235,20 +191,17 @@ export function BranchSetupCollector({ token }: { token: string }) {
           <section className="setup-map-card">
             <div className="setup-section-title"><span className="capture-number">2</span><div><h2>Confirm the exact office pin</h2><p>Drag the pin only if GPS placed it on a nearby building.</p></div></div>
             <MapPicker latitude={officePin.latitude} longitude={officePin.longitude} radius={invite.radius_m} onChange={updateOfficePin} />
-            <div className="setup-detected-grid"><DetectedItem icon={<MapPin />} label="GPS accuracy" value={`±${Math.round(location.accuracy)} metres (${location.consensusCount}/${location.sampleCount} agree)`} good={location.accuracy <= 50} /><DetectedItem icon={<Router />} label="Verified public IP" value={publicIp || "Unavailable"} good={Boolean(publicIp)} /><DetectedItem icon={<Wifi />} label="Connection" value={networkLabel()} /><DetectedItem icon={<Smartphone />} label="Device" value={deviceLabel()} /></div>
+            <div className="setup-detected-grid"><DetectedItem icon={<MapPin />} label="Location accuracy" value={`±${Math.round(location.accuracy)} metres`} good={location.accuracy <= 100} /><DetectedItem icon={<Smartphone />} label="Device" value={deviceLabel()} /></div>
           </section>
           <section className="setup-form-card">
             <div className="setup-section-title"><span className="capture-number">3</span><div><h2>Confirm branch information</h2><p>A super admin will review this before creating the branch.</p></div></div>
-            <div className="wifi-privacy-note"><Wifi size={19} /><div><strong>Confirm the Wi-Fi name manually</strong><span>Web browsers cannot read an SSID/Wi-Fi name. Copy it from the phone’s Wi-Fi settings so the record is accurate.</span></div></div>
             <div className="stack-lg">
-              <label className="field"><span>Office public IP (automatic, read-only)</span><input value={publicIp || "Detecting..."} readOnly aria-readonly="true" /><small>{publicIpSourceLabel(publicIpSource)}</small></label>
-              <label className="field"><span>Office Wi-Fi name (SSID)</span><input name="wifi_name" required minLength={2} maxLength={100} placeholder="Example: Colombo-Office-5G" /></label>
               <label className="field"><span>Full office address</span><textarea required maxLength={300} value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Building, street, city and postal code" /></label>
               <div className="form-grid"><label className="field"><span>Your name</span><input name="manager_name" required placeholder="Branch manager name" /></label><label className="field"><span>Phone number</span><input name="manager_phone" required placeholder="+94 77 123 4567" /></label></div>
-              <label className="field"><span>Notes (optional)</span><textarea name="notes" maxLength={500} placeholder="Floor, entrance, Wi-Fi router location, or anything the admin should know" /></label>
+              <label className="field"><span>Notes (optional)</span><textarea name="notes" maxLength={500} placeholder="Floor, entrance or anything the admin should know" /></label>
               <label className="setup-confirm"><input type="checkbox" required /><span>I checked the map and confirm the pin is on the exact office building.</span></label>
-              <label className="setup-confirm"><input type="checkbox" required /><span>I am physically inside the office, connected to its normal internet, with VPN and mobile data turned off.</span></label>
-              <button className="button button-primary button-lg button-full" disabled={saving || capturing || !publicIp}>{saving ? <><LoaderCircle className="spin" size={18} /> Saving securely…</> : <>Submit branch details <Check size={18} /></>}</button>
+              <label className="setup-confirm"><input type="checkbox" required /><span>I am physically inside the office and have allowed precise location.</span></label>
+              <button className="button button-primary button-lg button-full" disabled={saving || capturing}>{saving ? <><LoaderCircle className="spin" size={18} /> Saving securely…</> : <>Submit branch details <Check size={18} /></>}</button>
             </div>
           </section>
         </form>}
@@ -321,24 +274,6 @@ async function collectDeviceInfo({
     initialPinAdjustmentM,
     finalEvidenceToPinM: evidenceToPinM,
   };
-}
-
-function getNetworkInformation(): NetworkInfo {
-  const nav = navigator as Navigator & { connection?: NetworkInfo; mozConnection?: NetworkInfo; webkitConnection?: NetworkInfo };
-  return nav.connection || nav.mozConnection || nav.webkitConnection || {};
-}
-
-function networkLabel() {
-  const connection = getNetworkInformation();
-  return connection.type === "wifi" ? "Wi-Fi detected" : connection.effectiveType ? `${connection.effectiveType.toUpperCase()} reported` : "Browser restricted";
-}
-
-function publicIpSourceLabel(source: string) {
-  if (source === "vercel_client") return "Detected from the manager’s live HTTPS request by Vercel.";
-  if (source === "cloudflare_client") return "Detected from the manager’s live HTTPS request by Cloudflare.";
-  if (source === "local_egress_consensus") return "Confirmed by multiple independent public-IP services from this office server.";
-  if (source === "trusted_proxy") return "Detected from the configured trusted server proxy.";
-  return "The value will be verified again immediately before submission.";
 }
 
 function deviceLabel() {

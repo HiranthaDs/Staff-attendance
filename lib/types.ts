@@ -27,19 +27,10 @@ export type Branch = {
   longitude: number;
   radius_m: number;
   timezone: string;
-  verification_mode: "gps_and_ip" | "gps_or_ip" | "gps_only";
+  verification_mode: "gps_only";
   max_accuracy_m: number;
   late_grace_minutes: number;
   early_leave_grace_minutes: number;
-  active: boolean;
-  branch_networks?: BranchNetwork[];
-};
-
-export type BranchNetwork = {
-  id: string;
-  branch_id: string;
-  label: string;
-  ip_rule: string;
   active: boolean;
 };
 

@@ -412,11 +412,6 @@ h1, h2, h3, .brand { font-family: var(--font-display), var(--font-body), sans-se
 .detected-item i { margin-left: auto; padding: 3px 5px; border-radius: 99px; font-size: 7px; font-style: normal; font-weight: 800; }
 .detected-item i.good { color: #14745f; background: #daf3ea; }
 .detected-item i.warn { color: #95670c; background: #fff1cf; }
-.wifi-privacy-note { margin-bottom: 18px; padding: 12px; display: flex; align-items: flex-start; gap: 9px; color: #5c4a21; background: #fff7e3; border: 1px solid #f0e0b4; border-radius: 10px; }
-.wifi-privacy-note svg { flex: 0 0 auto; }
-.wifi-privacy-note div { display: grid; gap: 3px; }
-.wifi-privacy-note strong { font-size: 10px; }
-.wifi-privacy-note span { font-size: 8px; line-height: 1.5; }
 .setup-confirm { display: flex; align-items: flex-start; gap: 9px; color: #53615e; font-size: 10px; line-height: 1.45; }
 .setup-confirm input { width: 15px; height: 15px; accent-color: var(--green-700); }
 .setup-public-footer { padding: 26px 0 4px; display: flex; align-items: center; justify-content: center; gap: 7px; color: #71807c; font-size: 9px; }
@@ -1916,7 +1911,6 @@ h3 {
   box-shadow: 0 16px 48px rgba(45, 53, 90, .09);
 }
 .setup-detected-grid .detected-item,
-.wifi-privacy-note,
 .setup-confirm {
   background: #f6f5fc;
   border-color: transparent;

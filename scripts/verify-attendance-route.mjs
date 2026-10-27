@@ -49,12 +49,10 @@ function locationEvidence(latitude, longitude) {
   const now = Date.now();
   return {
     clientRequestId: crypto.randomUUID(),
-    captureStartedAt: new Date(now - 5_000).toISOString(),
+    captureStartedAt: new Date(now - 1_000).toISOString(),
     captureEndedAt: new Date(now).toISOString(),
     samples: [
-      { latitude, longitude, accuracy: 14, altitude: null, altitudeAccuracy: null, heading: null, speed: null, capturedAt: new Date(now - 4_500).toISOString() },
-      { latitude: latitude + 0.000002, longitude: longitude + 0.000001, accuracy: 12, altitude: null, altitudeAccuracy: null, heading: null, speed: null, capturedAt: new Date(now - 2_500).toISOString() },
-      { latitude: latitude - 0.000001, longitude: longitude - 0.000002, accuracy: 15, altitude: null, altitudeAccuracy: null, heading: null, speed: null, capturedAt: new Date(now - 500).toISOString() },
+      { latitude, longitude, accuracy: 14, altitude: null, altitudeAccuracy: null, heading: null, speed: null, capturedAt: new Date(now - 500).toISOString() },
     ],
   };
 }
@@ -100,7 +98,7 @@ try {
   const clockIn = await post("/api/attendance/mark", clockInPayload);
   assert.equal(clockIn.success, true);
   assert.equal(clockIn.checks.gps, true);
-  assert.equal(clockIn.checks.verificationMethod, "precise_gps");
+  assert.equal(clockIn.checks.verificationMethod, "location");
   assert.ok(clockIn.record.clock_in);
 
   const duplicate = await post("/api/attendance/mark", clockInPayload);
@@ -115,7 +113,7 @@ try {
   assert.equal(clockOut.record.id, clockIn.record.id);
   assert.ok(clockOut.record.clock_out);
 
-  console.log("Integrated Node attendance route passed: login, trusted challenge, GPS consensus, clock-in, idempotent retry, clock-out, and Supabase transaction.");
+  console.log("Integrated attendance route passed: login, trusted challenge, one location reading, clock-in, idempotent retry, clock-out, and Supabase transaction.");
 } finally {
   if (userId) {
     try { await service.auth.admin.deleteUser(userId); } catch { /* best-effort cleanup */ }

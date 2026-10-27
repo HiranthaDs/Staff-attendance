@@ -48,7 +48,7 @@ const contained139 = evaluateGpsPosition({
   gpsAvailable: true,
 });
 assert.equal(contained139.gpsOk, true);
-assert.equal(contained139.method, "contained_uncertainty");
+assert.equal(contained139.method, "standard");
 
 assert.equal(evaluateGpsPosition({
   distanceM: 70,
@@ -56,10 +56,10 @@ assert.equal(evaluateGpsPosition({
   radiusM: 200,
   maxAccuracyM: 80,
   gpsAvailable: true,
-}).gpsOk, false);
+}).gpsOk, true);
 assert.equal(evaluateGpsPosition({
   distanceM: 0,
-  accuracyM: 161,
+  accuracyM: 201,
   radiusM: 500,
   maxAccuracyM: 80,
   gpsAvailable: true,
@@ -80,44 +80,35 @@ assert.equal(evaluateGpsPosition({
   gpsAvailable: true,
 }).gpsOk, false);
 
-const strictMissingWifi = evaluatePresence({
+const insideRadius = evaluatePresence({
   distanceM: 10,
   accuracyM: 15,
   radiusM: 200,
   maxAccuracyM: 80,
   gpsAvailable: true,
-  ipAllowed: false,
-  verificationMode: "gps_and_ip",
-  hasNetworks: true,
 });
-assert.equal(strictMissingWifi.allowed, false);
-assert.match(strictMissingWifi.reason, /approved office (Wi-Fi|internet)/i);
+assert.equal(insideRadius.allowed, true);
+assert.equal(insideRadius.reason, "Verified");
 
-const wifiFallback = evaluatePresence({
+const outsideRadius = evaluatePresence({
   distanceM: 1_000,
-  accuracyM: 500,
+  accuracyM: 25,
   radiusM: 200,
   maxAccuracyM: 80,
-  gpsAvailable: false,
-  ipAllowed: true,
-  verificationMode: "gps_or_ip",
-  hasNetworks: true,
+  gpsAvailable: true,
 });
-assert.equal(wifiFallback.allowed, true);
-assert.equal(wifiFallback.reason, "Verified");
+assert.equal(outsideRadius.allowed, false);
+assert.match(outsideRadius.reason, /outside the 200 m attendance radius/i);
 
-const noConfiguredNetwork = evaluatePresence({
+const unavailableLocation = evaluatePresence({
   distanceM: 5,
   accuracyM: 10,
   radiusM: 200,
   maxAccuracyM: 80,
-  gpsAvailable: true,
-  ipAllowed: false,
-  verificationMode: "gps_and_ip",
-  hasNetworks: false,
+  gpsAvailable: false,
 });
-assert.equal(noConfiguredNetwork.allowed, false);
-assert.match(noConfiguredNetwork.reason, /no office network configured/i);
+assert.equal(unavailableLocation.allowed, false);
+assert.match(unavailableLocation.reason, /location is unavailable/i);
 
 const now = Date.now();
 assert.equal(isUsableLocationSample(position({ timestamp: now }), now), true);
@@ -148,7 +139,6 @@ assert.equal(tiedClusters?.ambiguous, true);
 globalThis.window = globalThis;
 let clearedWatchId = null;
 const sampled = await captureBestBrowserLocation({
-  desiredAccuracyM: 50,
   minimumWaitMs: 0,
   minimumSampleSpanMs: 0,
   maximumWaitMs: 1_000,
@@ -171,13 +161,12 @@ assert.equal(sampled.consensusCount, 3);
 assert.equal(sampled.samples.length, 3);
 assert.ok(sampled.captureStartedAt);
 assert.ok(sampled.captureEndedAt);
-assert.ok(sampled.captureDurationMs >= 1_500);
+assert.ok(sampled.captureDurationMs >= 450);
 assert.equal(clearedWatchId, 7);
 
 let deniedWatcherCleared = false;
 await assert.rejects(
   captureBestBrowserLocation({
-    desiredAccuracyM: 50,
     minimumWaitMs: 0,
     minimumSampleSpanMs: 0,
     maximumWaitMs: 1_000,

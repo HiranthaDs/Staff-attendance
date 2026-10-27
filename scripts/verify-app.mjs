@@ -34,8 +34,4 @@ const forcedReset = admin.status === 307 && admin.headers.get("location")?.inclu
 if (!forcedReset && (admin.status !== 200 || !adminBody.includes("Attendance board"))) {
   throw new Error(`Authenticated admin page check failed (${admin.status}).`);
 }
-const network = await fetch("http://localhost:3000/api/network-info", options);
-if (network.status !== 200 || !(await network.json()).ip) {
-  throw new Error(`Authenticated API check failed (${network.status}).`);
-}
-process.stdout.write(`Local app verification passed: ${forcedReset ? "first-login password gate" : "authenticated admin render"} and protected API.\n`);
+process.stdout.write(`Local app verification passed: ${forcedReset ? "first-login password gate" : "authenticated admin render"}.\n`);

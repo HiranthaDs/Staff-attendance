@@ -1,16 +1,14 @@
-import { createHash } from "node:crypto";
-import { calculateAttendanceTiming, ipMatchesRule, isPublicIp, localDateParts, normalizeIp, timeToMinutes, type RequestIpEvidence } from "@/lib/attendance";
-import { AttendanceGateway, type AttendanceContext, type AttendanceNetworkContext } from "@/lib/attendance-verifier/gateway";
+import { calculateAttendanceTiming, localDateParts, timeToMinutes } from "@/lib/attendance";
+import { AttendanceGateway, type AttendanceContext } from "@/lib/attendance-verifier/gateway";
 import { buildConsensus, distanceM, evaluateGeofence, GpsEvidenceError, type GpsConsensus, type LocationEvidenceSample } from "@/lib/attendance-verifier/gps";
 
-const POLICY_VERSION = "2026-10-27.v4-branch-grace";
+const POLICY_VERSION = "2026-10-27.v5-location-radius";
 
 export type AttendanceAction = "clock_in" | "clock_out";
 
 export type AttendanceEnvelope = {
   actorUserId: string;
   action: AttendanceAction;
-  ipEvidence: RequestIpEvidence;
   userAgent: string | null;
 };
 
@@ -29,7 +27,6 @@ export type AttendanceMarkInput = AttendanceEnvelope & {
 
 export type VerificationChecks = {
   gps: boolean;
-  wifi: boolean;
   distanceM: number | null;
   radiusM: number;
   accuracyM: number | null;
@@ -38,10 +35,8 @@ export type VerificationChecks = {
   sampleCount: number;
   sampleSpanMs: number;
   spreadM: number;
-  gpsMethod: "precise" | "contained_uncertainty" | "none";
-  verificationMethod: "precise_gps" | "contained_uncertainty" | "office_network" | "none";
-  ipSource: RequestIpEvidence["source"];
-  matchedNetworkId: string | null;
+  gpsMethod: "precise" | "standard" | "none";
+  verificationMethod: "location" | "none";
   policyVersion: string;
 };
 
@@ -69,17 +64,6 @@ function requireActiveContext(context: AttendanceContext | null, userId: string)
   return context as AttendanceContext & { branch: NonNullable<AttendanceContext["branch"]> };
 }
 
-function evidenceIp(evidence: RequestIpEvidence) {
-  if (!evidence.verified) return null;
-  const normalized = normalizeIp(evidence.ip);
-  if (!normalized || !isPublicIp(normalized)) throw new AttendanceServiceError("Verified client IP is invalid.", 400, "INVALID_IP");
-  return normalized;
-}
-
-function matchingNetwork(clientIp: string | null, networks: AttendanceNetworkContext[]) {
-  return networks.find((network) => network.active && ipMatchesRule(clientIp, network.ip_rule)) ?? null;
-}
-
 function boundedInteger(name: string, fallback: number, minimum: number, maximum: number) {
   const parsed = Number(process.env[name] ?? fallback);
   return Number.isInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;
@@ -91,23 +75,21 @@ export async function createAttendanceChallenge(
   now = new Date(),
 ) {
   const context = requireActiveContext(await gateway.loadAttendanceContext(request.actorUserId), request.actorUserId);
-  const clientIp = evidenceIp(request.ipEvidence);
   const ttlSeconds = boundedInteger("ATTENDANCE_CHALLENGE_TTL_SECONDS", 90, 30, 300);
   const result = await gateway.insertChallenge({
     userId: request.actorUserId,
     branchId: context.branch.id,
     action: request.action,
-    ipHash: clientIp ? createHash("sha256").update(clientIp, "ascii").digest("hex") : null,
     expiresAt: new Date(now.getTime() + ttlSeconds * 1_000),
   });
   const normalAccuracy = context.branch.max_accuracy_m;
   return {
     challenge_id: result.id,
     expires_at: result.expires_at,
-    minimum_samples: 3,
-    minimum_sample_span_ms: 2_000,
+    minimum_samples: 1,
+    minimum_sample_span_ms: 0,
     maximum_samples: 20,
-    maximum_accuracy_m: Math.max(normalAccuracy, Math.min(200, normalAccuracy * 2)),
+    maximum_accuracy_m: Math.max(200, normalAccuracy),
   };
 }
 
@@ -118,33 +100,19 @@ export async function markAttendance(
 ) {
   const context = requireActiveContext(await gateway.loadAttendanceContext(request.actorUserId), request.actorUserId);
   const branch = context.branch;
-  const clientIp = evidenceIp(request.ipEvidence);
-  const network = matchingNetwork(clientIp, context.networks);
-  const ipAllowed = Boolean(network);
-  const networkFallbackAllowed = branch.verification_mode === "gps_or_ip" && ipAllowed;
 
   let consensus: GpsConsensus | null = null;
   if (request.samples.length) {
     validateCaptureWindow(request);
     try {
-      consensus = buildConsensus(request.samples, { now });
+      consensus = buildConsensus(request.samples, { now, minimumSamples: 1, minimumSpanMs: 0 });
     } catch (error) {
       if (!(error instanceof GpsEvidenceError)) throw error;
-      if (!networkFallbackAllowed) {
-        await gateway.recordDenial(invalidGpsDenialPayload({
-          request,
-          branchId: branch.id,
-          now,
-          clientIp,
-          network,
-          ipAllowed,
-          reason: error.message,
-        }));
-        throw new AttendanceServiceError(error.message, 403, "GPS_EVIDENCE_REJECTED");
-      }
+      await gateway.recordDenial(invalidGpsDenialPayload({ request, branchId: branch.id, now, reason: error.message }));
+      throw new AttendanceServiceError("A fresh location could not be verified. Enable precise location and try again.", 403, "GPS_EVIDENCE_REJECTED");
     }
-  } else if (!networkFallbackAllowed) {
-    throw new AttendanceServiceError("Live location is required for this branch attendance policy.", 403, "GPS_EVIDENCE_REQUIRED");
+  } else {
+    throw new AttendanceServiceError("Live location is required to mark attendance.", 403, "GPS_EVIDENCE_REQUIRED");
   }
 
   const distance = consensus ? distanceM(branch.latitude, branch.longitude, consensus.latitude, consensus.longitude) : null;
@@ -153,17 +121,11 @@ export async function markAttendance(
     effectiveAccuracyM: consensus.effectiveAccuracyM,
     radiusM: branch.radius_m,
     maxAccuracyM: branch.max_accuracy_m,
-  }) : { allowed: false, method: "none" as const, reason: "Live location was unavailable; checking the approved office network instead." };
-  const hasNetworks = context.networks.length > 0;
-  let allowed: boolean;
-  if (branch.verification_mode === "gps_and_ip") allowed = gps.allowed && ipAllowed && hasNetworks;
-  else if (branch.verification_mode === "gps_or_ip") allowed = gps.allowed || (ipAllowed && hasNetworks);
-  else if (branch.verification_mode === "gps_only") allowed = gps.allowed;
-  else throw new AttendanceServiceError("Branch verification mode is invalid.", 500, "BRANCH_CONFIG");
+  }) : { allowed: false, method: "none" as const, reason: "Live location is unavailable." };
+  const allowed = gps.allowed;
 
   const checks: VerificationChecks = {
     gps: gps.allowed,
-    wifi: ipAllowed,
     distanceM: distance === null ? null : Math.round(distance),
     radiusM: branch.radius_m,
     accuracyM: consensus ? Math.round(consensus.effectiveAccuracyM) : null,
@@ -172,22 +134,14 @@ export async function markAttendance(
     sampleCount: consensus?.sampleCount ?? 0,
     sampleSpanMs: consensus?.sampleSpanMs ?? 0,
     spreadM: consensus ? Math.round(consensus.spreadM) : 0,
-    gpsMethod: gps.method === "precise_radius" ? "precise" : gps.method,
-    verificationMethod: gps.allowed && gps.method === "precise_radius"
-      ? "precise_gps"
-      : gps.allowed ? "contained_uncertainty" : allowed && ipAllowed ? "office_network" : "none",
-    ipSource: request.ipEvidence.source,
-    matchedNetworkId: network?.id ?? null,
+    gpsMethod: gps.method === "precise_radius" ? "precise" : gps.method === "standard_radius" ? "standard" : "none",
+    verificationMethod: gps.allowed ? "location" : "none",
     policyVersion: POLICY_VERSION,
   };
-  const common = rpcPayload({ request, context, consensus, checks, clientIp, now });
+  const common = rpcPayload({ request, context, consensus, checks, now });
 
   if (!allowed) {
-    const reason = branch.verification_mode === "gps_and_ip" && !hasNetworks
-      ? "This branch has no approved office network. Contact an administrator."
-      : branch.verification_mode === "gps_and_ip" && gps.allowed && !ipAllowed
-        ? "Connect to the approved office network and try again."
-        : gps.reason;
+    const reason = gps.reason;
     await gateway.recordDenial({ ...common, p_reason: reason });
     throw new AttendanceServiceError(reason, 403, "PRESENCE_NOT_VERIFIED");
   }
@@ -213,8 +167,8 @@ function validateCaptureWindow(request: AttendanceMarkInput) {
     throw new AttendanceServiceError("The location capture time is invalid.", 400, "INVALID_PAYLOAD");
   }
   const durationMs = ended.getTime() - started.getTime();
-  if (durationMs < 2_000 || durationMs > 120_000) {
-    throw new AttendanceServiceError("Location capture must take between 2 and 120 seconds.", 400, "INVALID_PAYLOAD");
+  if (durationMs < 0 || durationMs > 120_000) {
+    throw new AttendanceServiceError("The location capture duration is invalid.", 400, "INVALID_PAYLOAD");
   }
   const times = request.samples.map((sample) => new Date(sample.capturedAt).getTime());
   if (times.some((time) => !Number.isFinite(time))) {
@@ -230,7 +184,6 @@ function rpcPayload(input: {
   context: AttendanceContext & { branch: NonNullable<AttendanceContext["branch"]> };
   consensus: GpsConsensus | null;
   checks: VerificationChecks;
-  clientIp: string | null;
   now: Date;
 }) {
   let currentMinutes: number;
@@ -262,11 +215,11 @@ function rpcPayload(input: {
     p_longitude: input.consensus?.longitude ?? null,
     p_accuracy_m: input.checks.accuracyM,
     p_distance_m: input.checks.distanceM,
-    p_client_ip: input.clientIp,
-    p_ip_source: input.request.ipEvidence.source,
-    p_matched_network_id: input.checks.matchedNetworkId,
+    p_client_ip: null,
+    p_ip_source: "location_only",
+    p_matched_network_id: null,
     p_gps_passed: input.checks.gps,
-    p_ip_passed: input.checks.wifi,
+    p_ip_passed: false,
     p_status: lateMinutes ? "late" : "present",
     p_late_minutes: lateMinutes,
     p_early_leave_minutes: earlyLeaveMinutes,
@@ -281,9 +234,6 @@ function invalidGpsDenialPayload(input: {
   request: AttendanceMarkInput;
   branchId: string;
   now: Date;
-  clientIp: string | null;
-  network: AttendanceNetworkContext | null;
-  ipAllowed: boolean;
   reason: string;
 }) {
   const timestamps = input.request.samples
@@ -301,11 +251,11 @@ function invalidGpsDenialPayload(input: {
     p_longitude: null,
     p_accuracy_m: null,
     p_distance_m: null,
-    p_client_ip: input.clientIp,
-    p_ip_source: input.request.ipEvidence.source,
-    p_matched_network_id: input.network?.id ?? null,
+    p_client_ip: null,
+    p_ip_source: "location_only",
+    p_matched_network_id: null,
     p_gps_passed: false,
-    p_ip_passed: input.ipAllowed,
+    p_ip_passed: false,
     p_status: null,
     p_late_minutes: 0,
     p_early_leave_minutes: 0,

@@ -1,8 +1,9 @@
 import { calculateAttendanceTiming, localDateParts, timeToMinutes } from "@/lib/attendance";
-import { AttendanceGateway, type AttendanceContext } from "@/lib/attendance-verifier/gateway";
+import { AttendanceGateway, type AttendanceContext, type AttendanceWorkdayPolicy } from "@/lib/attendance-verifier/gateway";
+import { isoWeekday } from "@/lib/workday";
 import { buildConsensus, distanceM, evaluateGeofence, GpsEvidenceError, type GpsConsensus, type LocationEvidenceSample } from "@/lib/attendance-verifier/gps";
 
-const POLICY_VERSION = "2026-10-27.v5-location-radius";
+const POLICY_VERSION = "2026-10-27.v6-location-consensus";
 
 export type AttendanceAction = "clock_in" | "clock_out";
 
@@ -75,6 +76,16 @@ export async function createAttendanceChallenge(
   now = new Date(),
 ) {
   const context = requireActiveContext(await gateway.loadAttendanceContext(request.actorUserId), request.actorUserId);
+  const localDate = localDateParts(now, context.branch.timezone).date;
+  const workday = await gateway.loadWorkdayPolicy({
+    userId: request.actorUserId,
+    branchId: context.branch.id,
+    date: localDate,
+    weekday: isoWeekday(localDate),
+    arrival: context.profile.expected_arrival,
+    departure: context.profile.expected_departure,
+  });
+  requireMarkableWorkday(request.action, workday);
   const ttlSeconds = boundedInteger("ATTENDANCE_CHALLENGE_TTL_SECONDS", 90, 30, 300);
   const result = await gateway.insertChallenge({
     userId: request.actorUserId,
@@ -86,8 +97,8 @@ export async function createAttendanceChallenge(
   return {
     challenge_id: result.id,
     expires_at: result.expires_at,
-    minimum_samples: 1,
-    minimum_sample_span_ms: 0,
+    minimum_samples: 3,
+    minimum_sample_span_ms: 2_000,
     maximum_samples: 20,
     maximum_accuracy_m: Math.max(200, normalAccuracy),
   };
@@ -100,12 +111,22 @@ export async function markAttendance(
 ) {
   const context = requireActiveContext(await gateway.loadAttendanceContext(request.actorUserId), request.actorUserId);
   const branch = context.branch;
+  const attendanceDate = localDateParts(now, branch.timezone).date;
+  const workday = await gateway.loadWorkdayPolicy({
+    userId: request.actorUserId,
+    branchId: branch.id,
+    date: attendanceDate,
+    weekday: isoWeekday(attendanceDate),
+    arrival: context.profile.expected_arrival,
+    departure: context.profile.expected_departure,
+  });
+  requireMarkableWorkday(request.action, workday);
 
   let consensus: GpsConsensus | null = null;
   if (request.samples.length) {
     validateCaptureWindow(request);
     try {
-      consensus = buildConsensus(request.samples, { now, minimumSamples: 1, minimumSpanMs: 0 });
+      consensus = buildConsensus(request.samples, { now, minimumSamples: 3, minimumSpanMs: 2_000 });
     } catch (error) {
       if (!(error instanceof GpsEvidenceError)) throw error;
       await gateway.recordDenial(invalidGpsDenialPayload({ request, branchId: branch.id, now, reason: error.message }));
@@ -138,7 +159,7 @@ export async function markAttendance(
     verificationMethod: gps.allowed ? "location" : "none",
     policyVersion: POLICY_VERSION,
   };
-  const common = rpcPayload({ request, context, consensus, checks, now });
+  const common = rpcPayload({ request, context, consensus, checks, now, workday });
 
   if (!allowed) {
     const reason = gps.reason;
@@ -146,7 +167,6 @@ export async function markAttendance(
     throw new AttendanceServiceError(reason, 403, "PRESENCE_NOT_VERIFIED");
   }
 
-  const attendanceDate = localDateParts(now, branch.timezone).date;
   const result = await gateway.recordMark(common, attendanceDate);
   const possibleRecord = result.record;
   const record = possibleRecord && typeof possibleRecord === "object"
@@ -158,6 +178,19 @@ export async function markAttendance(
     record,
     checks,
   };
+}
+
+function requireMarkableWorkday(action: AttendanceAction, workday: AttendanceWorkdayPolicy) {
+  if (action === "clock_out") return;
+  if (workday.holidayName) {
+    throw new AttendanceServiceError(`Today is ${workday.holidayName}. Attendance is not required.`, 409, "HOLIDAY");
+  }
+  if (workday.leave?.portion === "full_day") {
+    throw new AttendanceServiceError("You have approved full-day leave today. Attendance is not required.", 409, "APPROVED_LEAVE");
+  }
+  if (workday.schedule.day_type === "off") {
+    throw new AttendanceServiceError("Today is a scheduled off day. Attendance is not required.", 409, "SCHEDULED_OFF");
+  }
 }
 
 function validateCaptureWindow(request: AttendanceMarkInput) {
@@ -185,6 +218,7 @@ function rpcPayload(input: {
   consensus: GpsConsensus | null;
   checks: VerificationChecks;
   now: Date;
+  workday: AttendanceWorkdayPolicy;
 }) {
   let currentMinutes: number;
   try {
@@ -192,8 +226,8 @@ function rpcPayload(input: {
   } catch {
     throw new AttendanceServiceError("The branch timezone is invalid.", 500, "BRANCH_CONFIG");
   }
-  const arrival = timeToMinutes(input.context.profile.expected_arrival);
-  const departure = timeToMinutes(input.context.profile.expected_departure);
+  const arrival = timeToMinutes(input.workday.schedule.arrival_time);
+  const departure = timeToMinutes(input.workday.schedule.departure_time);
   if (![arrival, departure].every(Number.isFinite)) {
     throw new AttendanceServiceError("Employee work hours are invalid.", 500, "PROFILE_CONFIG");
   }

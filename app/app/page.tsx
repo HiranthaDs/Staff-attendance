@@ -5,7 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { localDateParts } from "@/lib/attendance";
 import { loadCalendarNotes } from "@/lib/calendar-notes";
 import { EmployeeDashboard } from "@/components/employee/employee-dashboard";
-import type { AttendanceRecord, CalendarNote, LeaveRequest } from "@/lib/types";
+import { loadCompanyHolidays, loadWorkSchedule } from "@/lib/workday-data";
+import type { AttendanceRecord, CalendarNote, CompanyHoliday, LeaveRequest, MissedAttendance, WorkScheduleDay } from "@/lib/types";
 
 export default async function EmployeePage() {
   const profile = await requireProfile();
@@ -18,11 +19,14 @@ export default async function EmployeePage() {
   const yearEnd = `${today.slice(0, 4)}-12-31`;
   const calendarEnd = `${Number(today.slice(0, 4)) + 1}-12-31`;
 
-  const [{ data: todayRecord }, { data: attendance }, { data: leaves }, calendarNotes] = await Promise.all([
+  const [{ data: todayRecord }, { data: attendance }, { data: leaves }, calendarNotes, holidays, workSchedule, { data: missedAttendance }] = await Promise.all([
     supabase.from("attendance_records").select("*").eq("user_id", profile.id).eq("attendance_date", today).maybeSingle(),
     supabase.from("attendance_records").select("*, branch:branches(name, code)").eq("user_id", profile.id).order("attendance_date", { ascending: false }).limit(10),
     supabase.from("leave_requests").select("*").eq("user_id", profile.id).gte("start_date", yearStart).lte("start_date", yearEnd).order("created_at", { ascending: false }),
     loadCalendarNotes({ startDate: yearStart, endDate: calendarEnd, branchId: profile.branch_id }),
+    loadCompanyHolidays(supabase, { startDate: yearStart, endDate: calendarEnd, branchId: profile.branch_id, includePending: true }),
+    loadWorkSchedule(supabase, { userId: profile.id, arrival: profile.expected_arrival, departure: profile.expected_departure }),
+    supabase.from("attendance_absences").select("*").eq("user_id", profile.id).is("acknowledged_at", null).order("attendance_date", { ascending: false }).limit(5),
   ]);
 
   return (
@@ -35,6 +39,9 @@ export default async function EmployeePage() {
       attendance={(attendance ?? []) as AttendanceRecord[]}
       leaves={(leaves ?? []) as LeaveRequest[]}
       calendarNotes={calendarNotes as CalendarNote[]}
+      holidays={holidays as CompanyHoliday[]}
+      workSchedule={workSchedule as WorkScheduleDay[]}
+      missedAttendance={(missedAttendance ?? []) as MissedAttendance[]}
     />
   );
 }

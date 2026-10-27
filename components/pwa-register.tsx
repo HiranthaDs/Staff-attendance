@@ -21,7 +21,7 @@ export function PwaRegister() {
       window.dispatchEvent(new CustomEvent("presence:install-ready"));
     };
     window.addEventListener("beforeinstallprompt", captureInstallPrompt);
-    if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
+    if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" })
         .then((registration) => registration.update())
         .catch(() => undefined);

@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Check the branch details and try again." }, { status: 400 });
   const input = parsed.data;
 
-  const { data: branch, error } = await actor.admin.from("branches").insert({
+  const branchValues = {
     name: input.name,
     code: input.code.toUpperCase(),
     address: input.address,
@@ -35,10 +35,23 @@ export async function POST(request: Request) {
     late_grace_minutes: input.late_grace_minutes,
     early_leave_grace_minutes: input.early_leave_grace_minutes,
     created_by: actor.user.id,
-  }).select().single();
-  if (error) return NextResponse.json({ error: error.code === "23505" ? "That branch name or code already exists." : "The branch could not be created." }, { status: 409 });
+  };
+  let { data: branch, error } = await actor.admin.from("branches").insert(branchValues).select().single();
+  let legacySchema = false;
+  if (error && isMigrationRequired(error)) {
+    const { early_leave_grace_minutes: _omitted, ...legacyValues } = branchValues;
+    void _omitted;
+    const legacyResult = await actor.admin.from("branches").insert(legacyValues).select().single();
+    branch = legacyResult.data;
+    error = legacyResult.error;
+    legacySchema = !legacyResult.error;
+  }
+  if (error || !branch) {
+    if (error?.code === "23505") return NextResponse.json({ error: "That branch name or code already exists." }, { status: 409 });
+    return databaseMutationError(error, "The branch could not be created. Check the database connection and try again.");
+  }
 
-  return NextResponse.json({ branch }, { status: 201 });
+  return NextResponse.json({ branch, migrationRequired: legacySchema }, { status: 201 });
 }
 
 const updateSchema = z.object({

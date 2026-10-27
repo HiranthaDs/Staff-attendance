@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getApiAdmin } from "@/lib/api-auth";
 import { isTrustedMutationOrigin } from "@/lib/attendance-backend";
-import { businessLeaveDays } from "@/lib/leave";
+import { employeeLeaveDays } from "@/lib/leave";
+import { notifyUsers } from "@/lib/notifications";
+import { loadCompanyHolidays, loadWorkSchedule } from "@/lib/workday-data";
 
 const schema = z.object({
   user_id: z.string().uuid(),
@@ -22,7 +24,7 @@ export async function POST(request: Request) {
   const input = parsed.data;
 
   const { data: employee } = await actor.admin.from("profiles")
-    .select("id, active, annual_leave_days, monthly_leave_days")
+    .select("id, active, branch_id, expected_arrival, expected_departure, annual_leave_days, monthly_leave_days")
     .eq("id", input.user_id).neq("role", "super_admin").maybeSingle();
   if (!employee || !employee.active) return NextResponse.json({ error: "Choose an active employee." }, { status: 400 });
   if (input.end_date < input.start_date) return NextResponse.json({ error: "The end date must be on or after the start date." }, { status: 400 });
@@ -36,8 +38,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Annual leave cannot span two calendar years." }, { status: 400 });
   }
 
-  const requestedDays = businessLeaveDays(input.start_date, input.end_date, input.portion !== "full_day");
+  const [schedule, holidays] = await Promise.all([
+    loadWorkSchedule(actor.admin, { userId: employee.id, arrival: employee.expected_arrival, departure: employee.expected_departure }),
+    loadCompanyHolidays(actor.admin, { startDate: input.start_date, endDate: input.end_date, branchId: employee.branch_id }),
+  ]);
+  const requestedDays = employeeLeaveDays({
+    start: input.start_date,
+    end: input.end_date,
+    portion: input.portion,
+    schedule,
+    holidayDates: new Set(holidays.filter((holiday) => holiday.status === "approved").map((holiday) => holiday.holiday_date)),
+    fallback: { userId: employee.id, arrival: employee.expected_arrival, departure: employee.expected_departure },
+  });
   if (requestedDays <= 0) return NextResponse.json({ error: "The selected dates contain no working days." }, { status: 400 });
+
+  if (input.portion === "full_day") {
+    const { data: attendance } = await actor.admin.from("attendance_records").select("id")
+      .eq("user_id", input.user_id).gte("attendance_date", input.start_date).lte("attendance_date", input.end_date).limit(1);
+    if (attendance?.length) return NextResponse.json({ error: "Full-day leave cannot overlap attendance that is already recorded." }, { status: 409 });
+  }
 
   const { data: overlap } = await actor.admin.from("leave_requests").select("id")
     .eq("user_id", input.user_id).in("status", ["pending", "approved"])
@@ -66,6 +85,20 @@ export async function POST(request: Request) {
     reviewed_by: actor.user.id,
     reviewed_at: new Date().toISOString(),
   }).select("*, profile:profiles(full_name, employee_code, branch_id)").single();
-  if (error) return NextResponse.json({ error: "The employee leave could not be recorded." }, { status: 500 });
+  if (error) {
+    const conflict = error.code === "23P01" || error.message === "LEAVE_ATTENDANCE_OVERLAP";
+    return NextResponse.json({ error: conflict ? "This leave overlaps another request or recorded attendance." : "The employee leave could not be recorded." }, { status: conflict ? 409 : 500 });
+  }
+  if (input.portion === "full_day") {
+    await actor.admin.from("attendance_absences").delete().eq("user_id", input.user_id).gte("attendance_date", input.start_date).lte("attendance_date", input.end_date);
+  }
+  await notifyUsers({
+    recipientIds: [input.user_id],
+    kind: "leave",
+    title: "Leave added to your calendar",
+    body: `${requestedDays} day${requestedDays === 1 ? "" : "s"} of ${input.leave_type} leave was recorded for ${input.start_date}${input.end_date === input.start_date ? "" : ` to ${input.end_date}`}. Note: ${input.reason}`,
+    actionUrl: "/app#leave",
+    dedupeKey: `admin-leave:${leave.id}`,
+  });
   return NextResponse.json({ leave }, { status: 201 });
 }

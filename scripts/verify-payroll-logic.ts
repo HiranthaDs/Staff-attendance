@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import { calculatePayrollMoney, payrollCycleForPeriod, payrollPeriod, suggestedAttendanceDeduction, summarizePayroll } from "../lib/payroll.ts";
+import { defaultScheduleDay } from "../lib/workday.ts";
+import type { AttendanceRecord, CompanyHoliday, LeaveRequest, Profile, WorkScheduleDay } from "../lib/types.ts";
+
+assert.deepEqual(payrollPeriod("2026-10", "calendar_month"), { start: "2026-10-01", end: "2026-10-31" });
+assert.deepEqual(payrollPeriod("2026-10", "fifteenth_cycle"), { start: "2026-10-15", end: "2026-11-14" });
+assert.deepEqual(payrollPeriod("2026-10", "custom_cycle", 20), { start: "2026-10-20", end: "2026-11-19" });
+assert.equal(payrollCycleForPeriod("2026-10-01", "2026-10-31", 1), "calendar_month");
+assert.equal(payrollCycleForPeriod("2026-10-15", "2026-11-14"), "fifteenth_cycle");
+assert.equal(payrollCycleForPeriod("2026-10-20", "2026-11-19", 20), "custom_cycle");
+assert.equal(payrollCycleForPeriod("2026-10-15", "2026-11-15"), null);
+
+const profile = { id: "u1", full_name: "Test Employee", email: "test@example.com", phone: null, role: "staff", branch_id: "b1", job_title: null, employee_code: "E1", expected_arrival: "08:30", expected_departure: "17:00", monthly_leave_days: 1, annual_leave_days: 14, must_reset_password: false, active: true, created_at: "2026-10-01T00:00:00Z" } satisfies Profile;
+const schedule: WorkScheduleDay[] = Array.from({ length: 7 }, (_, index) => defaultScheduleDay(index + 1, "08:30", "17:00", "half_day", "off", profile.id));
+const attendance = [{ id: "a1", user_id: profile.id, branch_id: "b1", attendance_date: "2026-10-26", clock_in: "2026-10-26T03:00:00Z", clock_out: "2026-10-26T11:30:00Z", status: "present", work_minutes: 510, late_minutes: 0, early_leave_minutes: 0, clock_in_distance_m: 5, clock_out_distance_m: 5 }] satisfies AttendanceRecord[];
+const leaves = [{ id: "l1", user_id: profile.id, start_date: "2026-10-27", end_date: "2026-10-27", leave_type: "annual", portion: "full_day", requested_days: 1, reason: "Personal appointment", status: "approved", admin_note: null, created_at: "2026-10-01T00:00:00Z" }, { id: "l2", user_id: profile.id, start_date: "2026-10-28", end_date: "2026-10-28", leave_type: "monthly", portion: "first_half", requested_days: .5, reason: "Morning appointment", status: "approved", admin_note: null, created_at: "2026-10-01T00:00:00Z" }] satisfies LeaveRequest[];
+const holidays = [{ id: "h1", holiday_date: "2026-10-29", end_date: "2026-10-30", name: "Company break", holiday_type: "company", branch_id: null, status: "approved", source: "admin", source_reference: null, reason: "Company event", proposed_by: null, reviewed_by: null, review_note: null, created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z" }] satisfies CompanyHoliday[];
+const summary = summarizePayroll({ profile, start: "2026-10-26", end: "2026-11-01", today: "2026-11-02", schedule, holidays, leaves, attendance });
+assert.equal(summary.scheduled_days, 5.5);
+assert.equal(summary.attendance_days, 1);
+assert.equal(summary.full_leave_days, 1);
+assert.equal(summary.short_leave_count, 1);
+assert.equal(summary.holiday_days, 2);
+assert.equal(summary.absent_days, 1);
+assert.equal(suggestedAttendanceDeduction(110_000, summary), 20_000);
+const holidayLeaveSummary = summarizePayroll({ profile, start: "2026-10-27", end: "2026-10-27", today: "2026-11-02", schedule, holidays: [{ ...holidays[0], holiday_date: "2026-10-27", end_date: "2026-10-27" }], leaves, attendance: [] });
+assert.equal(holidayLeaveSummary.holiday_days, 1);
+assert.equal(holidayLeaveSummary.full_leave_days, 0);
+assert.equal(holidayLeaveSummary.absent_days, 0);
+const money = calculatePayrollMoney({ basicSalary: 100_000, fixedAllowances: 10_000, otherEarnings: 5_000, attendanceDeduction: 10_000, otherDeductions: 1_000, epfEnabled: true });
+assert.deepEqual(money, { contributionBase: 100_000, employeeEpf: 8_000, employerEpf: 12_000, employerEtf: 3_000, grossPay: 105_000, netPay: 96_000 });
+console.log("Payroll rules verified: calendar, 15th and custom cycles, attendance, leave, holiday, absence and EPF/ETF calculations.");

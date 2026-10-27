@@ -1,5 +1,5 @@
-const CACHE = "presence-static-v2";
-const SHELL = ["/manifest.webmanifest", "/icons/icon-192.svg"];
+const CACHE = "presence-static-v3";
+const SHELL = ["/manifest.webmanifest", "/icons/presence-192-v2.png", "/icons/presence-512-v2.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).catch(() => undefined));
@@ -56,4 +56,25 @@ self.addEventListener("notificationclick", (event) => {
       return self.clients.openWindow(target);
     }),
   );
+});
+
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: "Presence", body: event.data?.text() || "You have a new update." };
+  }
+  const title = data.title || "Presence";
+  const options = {
+    body: data.body || "You have a new attendance update.",
+    icon: data.icon || "/icons/presence-192-v2.png",
+    badge: data.badge || "/icons/presence-192-v2.png",
+    tag: data.tag || `presence-${data.kind || "update"}`,
+    renotify: true,
+    vibrate: [120, 60, 120],
+    data: { url: data.url || "/app" },
+    actions: [{ action: "open", title: "Open Presence" }],
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
 });

@@ -1,5 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="#0d493d"/>
-  <path d="M152 144h128c70 0 116 39 116 101s-46 101-116 101h-45v54h-83V144Zm83 70v62h45c23 0 38-8 38-31s-15-31-38-31h-45Z" fill="#dff8c9"/>
-  <circle cx="382" cy="382" r="52" fill="#fdc75b"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="b" x1="60" y1="28" x2="475" y2="500" gradientUnits="userSpaceOnUse"><stop stop-color="#174d35"/><stop offset="1" stop-color="#06271e"/></linearGradient><linearGradient id="p" x1="165" y1="115" x2="355" y2="402" gradientUnits="userSpaceOnUse"><stop stop-color="#efff54"/><stop offset=".5" stop-color="#bfff38"/><stop offset="1" stop-color="#37e878"/></linearGradient></defs><rect width="512" height="512" fill="url(#b)"/><path d="M256 113c-72 0-126 52-126 121 0 89 126 187 126 187s126-98 126-187c0-69-54-121-126-121Z" fill="url(#p)"/><circle cx="256" cy="236" r="53" fill="#0a3527"/><circle cx="256" cy="236" r="23" fill="#f5ff75"/></svg>

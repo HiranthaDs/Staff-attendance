@@ -18,3 +18,4 @@
 .vercel
 *.tsbuildinfo
 .DS_Store
+.presence-dev*.log

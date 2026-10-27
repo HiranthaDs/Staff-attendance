@@ -5,6 +5,7 @@ import { isTrustedMutationOrigin } from "@/lib/attendance-backend";
 import { databaseMutationError, isMigrationRequired } from "@/lib/database-errors";
 import { removeCompatibilityCalendarNote, saveCompatibilityCalendarNote } from "@/lib/calendar-notes";
 import type { CalendarNote } from "@/lib/types";
+import { activeUserIds, notifyUsers } from "@/lib/notifications";
 
 const createSchema = z.object({
   note_date: z.string().date(),
@@ -53,12 +54,14 @@ export async function POST(request: Request) {
     };
     try {
       await saveCompatibilityCalendarNote(compatibilityNote);
+      await notifyCalendarUsers(compatibilityNote);
       return NextResponse.json({ note: compatibilityNote }, { status: 201 });
     } catch {
       return NextResponse.json({ error: "The calendar note could not be saved." }, { status: 500 });
     }
   }
   if (error) return databaseMutationError(error, "The calendar note could not be saved.");
+  await notifyCalendarUsers(note as CalendarNote);
   return NextResponse.json({ note }, { status: 201 });
 }
 
@@ -69,6 +72,7 @@ export async function DELETE(request: Request) {
   const parsed = deleteSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Choose a valid calendar note." }, { status: 400 });
 
+  const { data: existing } = await actor.admin.from("calendar_notes").select("id,title,note_date,branch_id").eq("id", parsed.data.id).maybeSingle();
   const { error } = await actor.admin.from("calendar_notes").delete().eq("id", parsed.data.id);
   if (error && !isMigrationRequired(error)) return databaseMutationError(error, "The calendar note could not be removed.");
   try {
@@ -76,5 +80,26 @@ export async function DELETE(request: Request) {
   } catch {
     if (error) return NextResponse.json({ error: "The calendar note could not be removed." }, { status: 500 });
   }
+  if (existing) {
+    await notifyUsers({
+      recipientIds: await activeUserIds(existing.branch_id),
+      kind: "calendar",
+      title: "Calendar item removed",
+      body: `${existing.title} on ${existing.note_date} was removed from the team calendar.`,
+      actionUrl: "/app#calendar",
+      dedupeKey: `calendar-delete:${existing.id}:${Date.now()}`,
+    });
+  }
   return NextResponse.json({ success: true });
+}
+
+async function notifyCalendarUsers(note: CalendarNote) {
+  await notifyUsers({
+    recipientIds: await activeUserIds(note.branch_id),
+    kind: "calendar",
+    title: "New team calendar update",
+    body: `${note.title} on ${note.note_date}${note.note ? ` - ${note.note}` : ""}`,
+    actionUrl: "/app#calendar",
+    dedupeKey: `calendar-note:${note.id}:${note.updated_at}`,
+  });
 }

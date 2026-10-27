@@ -49,10 +49,12 @@ function locationEvidence(latitude, longitude) {
   const now = Date.now();
   return {
     clientRequestId: crypto.randomUUID(),
-    captureStartedAt: new Date(now - 1_000).toISOString(),
+    captureStartedAt: new Date(now - 3_000).toISOString(),
     captureEndedAt: new Date(now).toISOString(),
     samples: [
-      { latitude, longitude, accuracy: 14, altitude: null, altitudeAccuracy: null, heading: null, speed: null, capturedAt: new Date(now - 500).toISOString() },
+      { latitude, longitude, accuracy: 14, altitude: null, altitudeAccuracy: null, heading: null, speed: null, capturedAt: new Date(now - 2_700).toISOString() },
+      { latitude: latitude + 0.000001, longitude: longitude - 0.000001, accuracy: 13, altitude: null, altitudeAccuracy: null, heading: null, speed: null, capturedAt: new Date(now - 1_500).toISOString() },
+      { latitude: latitude - 0.000001, longitude: longitude + 0.000001, accuracy: 15, altitude: null, altitudeAccuracy: null, heading: null, speed: null, capturedAt: new Date(now - 500).toISOString() },
     ],
   };
 }

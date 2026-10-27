@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Manrope } from "next/font/google";
 import { PwaRegister } from "@/components/pwa-register";
 import { CalendarUpdateNotifier } from "@/components/calendar/calendar-update-notifier";
+import { IdleSessionGuard } from "@/components/session/idle-session-guard";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
@@ -14,10 +15,17 @@ export const metadata: Metadata = {
   applicationName: "Presence",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "Presence" },
   formatDetection: { telephone: false },
+  icons: {
+    icon: [
+      { url: "/icons/presence-192-v2.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/presence-512-v2.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/presence-192-v2.png", sizes: "192x192", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#eaf8ff",
+  themeColor: "#e9eee8",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -31,6 +39,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         {children}
         <CalendarUpdateNotifier />
         <PwaRegister />
+        <IdleSessionGuard />
       </body>
     </html>
   );

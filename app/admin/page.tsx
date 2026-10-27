@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { localDateParts } from "@/lib/attendance";
 import { loadCalendarNotes } from "@/lib/calendar-notes";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
-import type { AttendanceRecord, Branch, BranchSetupInvite, BranchSetupSubmission, CalendarNote, LeaveRequest, Profile } from "@/lib/types";
+import { loadCompanyHolidays } from "@/lib/workday-data";
+import type { AttendanceRecord, Branch, BranchSetupInvite, BranchSetupSubmission, CalendarNote, CompanyHoliday, LeaveRequest, Profile } from "@/lib/types";
 
 export default async function AdminPage() {
   const profile = await requireAdmin();
@@ -17,9 +18,16 @@ export default async function AdminPage() {
   const leaveQuery = supabase.from("leave_requests").select("*, profile:profiles(full_name, employee_code, branch_id)").order("created_at", { ascending: false }).limit(100);
   const setupInvitesQuery = supabase.from("branch_setup_invites").select("id, proposed_name, proposed_code, radius_m, verification_mode, status, expires_at, created_at, submitted_at, approved_at").order("created_at", { ascending: false }).limit(100);
   const setupSubmissionsQuery = supabase.from("branch_setup_submissions").select("*, invite:branch_setup_invites(id, proposed_name, proposed_code, radius_m, verification_mode, status, expires_at, created_at, submitted_at, approved_at)").order("submitted_at", { ascending: false }).limit(100);
+  const workSchedulesQuery = supabase.from("employee_work_schedules").select("user_id,weekday,day_type,arrival_time,departure_time");
   const calendarNotesQuery = loadCalendarNotes({
     startDate: `${today.slice(0, 4)}-01-01`,
     endDate: `${Number(today.slice(0, 4)) + 1}-12-31`,
+    includeAllBranches: true,
+  });
+  const holidaysQuery = loadCompanyHolidays(supabase, {
+    startDate: `${today.slice(0, 4)}-01-01`,
+    endDate: `${Number(today.slice(0, 4)) + 1}-12-31`,
+    includePending: true,
     includeAllBranches: true,
   });
 
@@ -29,7 +37,7 @@ export default async function AdminPage() {
     attendanceQuery = attendanceQuery.eq("branch_id", branchFilter);
   }
 
-  const [staffResult, branchesResult, attendanceResult, leavesResult, setupInvitesResult, setupSubmissionsResult, calendarNotesResult] = await Promise.all([
+  const [staffResult, branchesResult, attendanceResult, leavesResult, setupInvitesResult, setupSubmissionsResult, calendarNotesResult, holidaysResult, workSchedulesResult] = await Promise.all([
     staffQuery,
     branchesQuery,
     attendanceQuery,
@@ -37,6 +45,8 @@ export default async function AdminPage() {
     setupInvitesQuery,
     setupSubmissionsQuery,
     calendarNotesQuery,
+    holidaysQuery,
+    workSchedulesQuery,
   ]);
 
   const leaves = ((leavesResult.data ?? []) as (LeaveRequest & { profile?: Profile })[]).filter(
@@ -48,12 +58,13 @@ export default async function AdminPage() {
       admin={profile}
       today={today}
       initialBranches={(branchesResult.data ?? []) as Branch[]}
-      initialStaff={(staffResult.data ?? []) as Profile[]}
+      initialStaff={((staffResult.data ?? []) as Profile[]).map((person) => ({ ...person, work_schedule: (workSchedulesResult.data ?? []).filter((day) => day.user_id === person.id) }))}
       attendance={(attendanceResult.data ?? []) as AttendanceRecord[]}
       initialLeaves={leaves}
       initialSetupInvites={(setupInvitesResult.data ?? []) as BranchSetupInvite[]}
       initialSetupSubmissions={(setupSubmissionsResult.data ?? []) as BranchSetupSubmission[]}
       initialCalendarNotes={calendarNotesResult as CalendarNote[]}
+      initialHolidays={holidaysResult as CompanyHoliday[]}
     />
   );
 }

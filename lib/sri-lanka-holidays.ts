@@ -66,6 +66,10 @@ export function sriLankaHolidaysForYear(year: number) {
   return HOLIDAYS.filter((holiday) => holiday.date.startsWith(prefix));
 }
 
+export function sriLankaHolidaysForRange(start: string, end: string) {
+  return HOLIDAYS.filter((holiday) => holiday.date >= start && holiday.date <= end);
+}
+
 export function isSriLankaHoliday(date: string) {
   return HOLIDAYS.some((holiday) => holiday.date === date);
 }

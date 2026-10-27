@@ -73,9 +73,9 @@ export function OfficeMap({
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         maxZoom: 19,
       }).addTo(map);
-      const officeIcon = L.divIcon({ className: "office-location-icon", html: "<span><i></i></span>", iconSize: [38, 44], iconAnchor: [19, 42] });
+      const officeIcon = L.divIcon({ className: "office-location-icon", html: '<span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 10h.01M15 10h.01M9 14h.01M15 14h.01M10 21v-3h4v3"/></svg></span>', iconSize: [48, 52], iconAnchor: [24, 48] });
       L.marker(point, { icon: officeIcon, interactive: false }).addTo(map).bindTooltip(office.name, { direction: "top", offset: [0, -38] });
-      const officeCircle = L.circle(point, { radius: office.radiusM, color: "#0a84ff", fillColor: "#5ac8fa", fillOpacity: 0.13, weight: 2, dashArray: "7 6", interactive: false }).addTo(map);
+      const officeCircle = L.circle(point, { radius: office.radiusM, color: "#6e875e", fillColor: "#dfff72", fillOpacity: 0.2, weight: 2, dashArray: "7 6", interactive: false }).addTo(map);
       map.fitBounds(officeCircle.getBounds(), { padding: [28, 28], maxZoom: 17 });
       mapRef.current = map;
       officeCircleRef.current = officeCircle;
@@ -99,9 +99,9 @@ export function OfficeMap({
     if (!L || !map || !officeCircle || !staffLocation) return;
     const point: [number, number] = [staffLocation.latitude, staffLocation.longitude];
     if (!staffMarkerRef.current) {
-      const staffIcon = L.divIcon({ className: "staff-location-icon", html: "<span><i></i></span>", iconSize: [34, 34], iconAnchor: [17, 17] });
+      const staffIcon = L.divIcon({ className: "staff-location-icon", html: '<span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3"/><path d="M6.5 20c.7-4 2.5-6 5.5-6s4.8 2 5.5 6"/></svg></span>', iconSize: [36, 36], iconAnchor: [18, 18] });
       staffMarkerRef.current = L.marker(point, { icon: staffIcon, interactive: false }).addTo(map).bindTooltip("Your location", { direction: "top", offset: [0, -16] });
-      accuracyCircleRef.current = L.circle(point, { radius: staffLocation.accuracy, color: "#7c5cff", fillColor: "#9a86ff", fillOpacity: 0.1, weight: 1, interactive: false }).addTo(map);
+      accuracyCircleRef.current = L.circle(point, { radius: staffLocation.accuracy, color: "#26322a", fillColor: "#9ca99e", fillOpacity: 0.12, weight: 1, interactive: false }).addTo(map);
     } else {
       staffMarkerRef.current.setLatLng(point);
       accuracyCircleRef.current?.setLatLng(point).setRadius(staffLocation.accuracy);
@@ -120,7 +120,7 @@ export function OfficeMap({
       <div className="staff-map-wrap">
         <div ref={element} className="staff-office-map" aria-label={`Map showing ${office.name} and your current location`} />
         <div className="map-glass-legend"><span><i className="office" /><Building2 size={13} /> Office</span><span><i className="staff" /><Navigation size={13} /> You</span></div>
-        {staffLocation && <div className={`map-distance-pill ${locationState}`}>{locationState === "inside" ? <Check size={14} /> : locationState === "uncertain" || locationState === "stale" ? <Crosshair size={14} /> : <X size={14} />}<strong>{locationState === "inside" ? "Verified inside office zone" : locationState === "uncertain" ? "Location still uncertain" : locationState === "stale" ? "Location expired — refresh" : "Outside office zone"}</strong><span>{distanceM} m away · ±{Math.round(staffLocation.accuracy)} m accuracy</span></div>}
+        {staffLocation && <div className={`map-distance-pill ${locationState}`}>{locationState === "inside" ? <Check size={14} /> : locationState === "uncertain" || locationState === "stale" ? <Crosshair size={14} /> : <X size={14} />}<strong>{locationState === "inside" ? "You are inside the office zone" : locationState === "uncertain" ? "Your location is not accurate enough yet" : locationState === "stale" ? "Your location expired — refresh it" : "You are not inside the office zone"}</strong><span>{distanceM} m from office · ±{Math.round(staffLocation.accuracy)} m accuracy</span></div>}
         {!staffLocation && <div className="map-location-prompt"><MapPin size={16} /><span>Tap <strong>Show me</strong> to display your live position.</span></div>}
       </div>
     </section>

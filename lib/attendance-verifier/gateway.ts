@@ -4,6 +4,10 @@ import {
   createCompatibilityChallenge,
   verifyCompatibilityChallenge,
 } from "@/lib/attendance-verifier/compatibility-challenge";
+import { defaultScheduleDay } from "@/lib/workday";
+import { isSriLankaHoliday } from "@/lib/sri-lanka-holidays";
+import type { LeaveRequest, WorkScheduleDay } from "@/lib/types";
+import { loadCompatibilityHolidays } from "@/lib/holiday-store";
 
 const SAFE_DATABASE_SIGNALS = new Set([
   "ATTENDANCE_BRANCH_CONFLICT",
@@ -27,6 +31,9 @@ const SAFE_DATABASE_SIGNALS = new Set([
   "IDEMPOTENT_RECORD_NOT_FOUND",
   "IP_ALREADY_USED_BY_ANOTHER_EMPLOYEE",
   "PASSWORD_RESET_REQUIRED",
+  "HOLIDAY",
+  "APPROVED_LEAVE",
+  "SCHEDULED_OFF",
   "PRESENCE_NOT_VERIFIED",
   "STALE_REQUEST_TIME",
 ]);
@@ -100,6 +107,12 @@ export type AttendanceContext = {
   branch: AttendanceBranchContext | null;
 };
 
+export type AttendanceWorkdayPolicy = {
+  schedule: WorkScheduleDay;
+  holidayName: string | null;
+  leave: LeaveRequest | null;
+};
+
 export class AttendanceStorageError extends Error {
   constructor(
     message: string,
@@ -159,6 +172,41 @@ export class AttendanceGateway {
     return {
       profile,
       branch: branchResult.data as AttendanceBranchContext | null,
+    };
+  }
+
+  async loadWorkdayPolicy(input: {
+    userId: string;
+    branchId: string;
+    date: string;
+    weekday: number;
+    arrival: string;
+    departure: string;
+  }): Promise<AttendanceWorkdayPolicy> {
+    const [scheduleResult, holidayResult, leaveResult] = await Promise.all([
+      this.client.from("employee_work_schedules")
+        .select("user_id,weekday,day_type,arrival_time,departure_time")
+        .eq("user_id", input.userId).eq("weekday", input.weekday).maybeSingle(),
+      this.client.from("company_holidays").select("name")
+        .lte("holiday_date", input.date).gte("end_date", input.date).eq("status", "approved")
+        .or(`branch_id.is.null,branch_id.eq.${input.branchId}`).limit(1).maybeSingle(),
+      this.client.from("leave_requests").select("*")
+        .eq("user_id", input.userId).eq("status", "approved")
+        .lte("start_date", input.date).gte("end_date", input.date).limit(1).maybeSingle(),
+    ]);
+    if (scheduleResult.error && !isMigrationError(scheduleResult.error)) throw storageError(scheduleResult.error, scheduleResult.status);
+    if (holidayResult.error && !isMigrationError(holidayResult.error)) throw storageError(holidayResult.error, holidayResult.status);
+    if (leaveResult.error) throw storageError(leaveResult.error, leaveResult.status);
+    const compatibilityHoliday = holidayResult.error && isMigrationError(holidayResult.error)
+      ? (await loadCompatibilityHolidays()).find((holiday) => holiday.status === "approved"
+        && holiday.holiday_date <= input.date && (holiday.end_date || holiday.holiday_date) >= input.date
+        && (holiday.branch_id === null || holiday.branch_id === input.branchId))
+      : null;
+    return {
+      schedule: (scheduleResult.data as WorkScheduleDay | null)
+        ?? defaultScheduleDay(input.weekday, input.arrival, input.departure, "half_day", "off", input.userId),
+      holidayName: holidayResult.data?.name ?? compatibilityHoliday?.name ?? (isSriLankaHoliday(input.date) ? "Sri Lanka public holiday" : null),
+      leave: (leaveResult.data as LeaveRequest | null) ?? null,
     };
   }
 

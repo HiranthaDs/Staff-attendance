@@ -18,7 +18,10 @@
     "verify:attendance-route": "node --env-file=.env.local scripts/verify-attendance-route.mjs",
     "verify:security": "npm run verify:location && npm run verify:verifier",
     "verify:branch-setup": "node --env-file=.env.local scripts/verify-branch-setup.mjs",
-    "verify:password-session": "node --env-file=.env.local scripts/verify-password-session.mjs"
+    "verify:direct-branch": "node --env-file=.env.local scripts/verify-direct-branch.mjs",
+    "verify:password-session": "node --env-file=.env.local scripts/verify-password-session.mjs",
+    "verify:workday": "node --no-warnings --experimental-strip-types scripts/verify-workday-logic.ts",
+    "verify:payroll": "node --no-warnings --experimental-strip-types scripts/verify-payroll-logic.ts"
   },
   "dependencies": {
     "@supabase/ssr": "latest",
@@ -29,6 +32,7 @@
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
+    "web-push": "^3.6.7",
     "zod": "latest"
   },
   "devDependencies": {
@@ -36,6 +40,7 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "@types/web-push": "^3.6.4",
     "eslint": "latest",
     "eslint-config-next": "latest",
     "pg": "^8.23.1",

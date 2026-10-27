@@ -193,5 +193,5 @@ export function evaluateGeofence(input: {
       reason: "Location is inside the branch radius",
     };
   }
-  return { allowed: false, method: "none", reason: `Your location is ${Math.round(input.distanceFromBranchM)} m from the office centre, outside the ${input.radiusM} m attendance radius.` };
+  return { allowed: false, method: "none", reason: `You are not inside the office attendance area. Your location is ${Math.round(input.distanceFromBranchM)} m from the office centre and the allowed radius is ${input.radiusM} m. If you are at the office, enable precise location and retry.` };
 }

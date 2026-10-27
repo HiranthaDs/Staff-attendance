@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
 
-export function LoginForm({ initialErrorCode = "", nextPath = "/" }: { initialErrorCode?: string; nextPath?: string }) {
+export function LoginForm({ initialErrorCode = "", nextPath = "/", initialEmail = "" }: { initialErrorCode?: string; nextPath?: string; initialEmail?: string }) {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const initialError = initialErrorCode === "account_disabled"
@@ -36,6 +36,7 @@ export function LoginForm({ initialErrorCode = "", nextPath = "/" }: { initialEr
       const destination = nextPath === "/"
         ? typeof result.redirectTo === "string" ? result.redirectTo : "/"
         : nextPath;
+      window.localStorage.setItem("presence:last-active-at", String(Date.now()));
       router.replace(destination);
     } catch {
       setError("The sign-in service could not be reached. Check your connection and try again.");

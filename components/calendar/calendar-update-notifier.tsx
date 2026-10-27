@@ -45,8 +45,11 @@ export function CalendarUpdateNotifier() {
             detail: { eventType: payload.eventType, note: row },
           }));
           if ("Notification" in window && Notification.permission === "granted") {
-            const options = { body: `${next.title}${next.date ? ` · ${next.date}` : ""}`, icon: "/icons/icon-192.svg", data: { url: "/app#calendar" } };
-            if ("serviceWorker" in navigator && navigator.serviceWorker.controller) navigator.serviceWorker.ready.then((registration) => registration.showNotification(action, options)).catch(() => new Notification(action, options));
+            const options = { body: `${next.title}${next.date ? ` · ${next.date}` : ""}`, icon: "/icons/presence-192-v2.png", data: { url: "/app#calendar" } };
+            if ("serviceWorker" in navigator && navigator.serviceWorker.controller) navigator.serviceWorker.ready.then(async (registration) => {
+              const pushSubscription = await registration.pushManager?.getSubscription();
+              if (!pushSubscription) await registration.showNotification(action, options);
+            }).catch(() => new Notification(action, options));
             else new Notification(action, options);
           }
         },

@@ -1,0 +1,20 @@
+# dependencies
+/node_modules
+/.venv
+/backend/.venv
+/.pnp
+.pnp.*
+
+# testing and builds
+/coverage
+/.next
+/out
+
+# local environment files
+.env*
+!.env.example
+
+# deployment and editor state
+.vercel
+*.tsbuildinfo
+.DS_Store

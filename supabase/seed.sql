@@ -1,0 +1,2 @@
+-- Sample branches are intentionally not inserted because each branch needs its
+-- real map position and public office IP. Create them in the admin interface.

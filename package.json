@@ -1,0 +1,46 @@
+{
+  "name": "presence-office-attendance",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "node scripts/apply-migration.mjs",
+    "db:bootstrap-admin": "node --env-file=.env.local scripts/bootstrap-admin.mjs",
+    "verify:live": "node --env-file=.env.local scripts/verify-live.mjs",
+    "verify:app": "node --env-file=.env.local scripts/verify-app.mjs",
+    "verify:attendance": "node scripts/verify-attendance-transaction.mjs",
+    "verify:location": "node --no-warnings --experimental-strip-types scripts/verify-location-logic.mjs",
+    "verify:ip": "node --no-warnings --experimental-strip-types scripts/verify-ip-logic.mjs",
+    "verify:verifier": "node --no-warnings --experimental-strip-types scripts/verify-attendance-verifier.ts",
+    "verify:attendance-route": "node --env-file=.env.local scripts/verify-attendance-route.mjs",
+    "verify:security": "npm run verify:location && npm run verify:ip && npm run verify:verifier",
+    "verify:branch-setup": "node --env-file=.env.local scripts/verify-branch-setup.mjs",
+    "verify:password-session": "node --env-file=.env.local scripts/verify-password-session.mjs"
+  },
+  "dependencies": {
+    "@supabase/ssr": "latest",
+    "@supabase/supabase-js": "latest",
+    "date-fns": "latest",
+    "ipaddr.js": "latest",
+    "leaflet": "latest",
+    "lucide-react": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/leaflet": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "pg": "^8.23.1",
+    "typescript": "latest"
+  }
+}

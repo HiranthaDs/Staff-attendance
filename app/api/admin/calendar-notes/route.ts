@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getApiAdmin } from "@/lib/api-auth";
 import { isTrustedMutationOrigin } from "@/lib/attendance-backend";
+import { databaseMutationError, isMigrationRequired } from "@/lib/database-errors";
+import { removeCompatibilityCalendarNote, saveCompatibilityCalendarNote } from "@/lib/calendar-notes";
+import type { CalendarNote } from "@/lib/types";
 
 const createSchema = z.object({
   note_date: z.string().date(),
@@ -20,8 +23,10 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Choose a date and enter a short note title." }, { status: 400 });
 
   const branchId = parsed.data.branch_id || null;
+  let branch: { id: string; name: string; code: string } | null = null;
   if (branchId) {
-    const { data: branch } = await actor.admin.from("branches").select("id").eq("id", branchId).eq("active", true).maybeSingle();
+    const { data } = await actor.admin.from("branches").select("id, name, code").eq("id", branchId).eq("active", true).maybeSingle();
+    branch = data;
     if (!branch) return NextResponse.json({ error: "Choose an active branch." }, { status: 400 });
   }
 
@@ -33,7 +38,27 @@ export async function POST(request: Request) {
     created_by: actor.user.id,
   }).select("*, branch:branches(id, name, code)").single();
 
-  if (error) return NextResponse.json({ error: "The calendar note could not be saved." }, { status: 500 });
+  if (error && isMigrationRequired(error)) {
+    const timestamp = new Date().toISOString();
+    const compatibilityNote: CalendarNote = {
+      id: crypto.randomUUID(),
+      note_date: parsed.data.note_date,
+      title: parsed.data.title,
+      note: parsed.data.note || null,
+      branch_id: branchId,
+      created_by: actor.user.id,
+      created_at: timestamp,
+      updated_at: timestamp,
+      branch,
+    };
+    try {
+      await saveCompatibilityCalendarNote(compatibilityNote);
+      return NextResponse.json({ note: compatibilityNote }, { status: 201 });
+    } catch {
+      return NextResponse.json({ error: "The calendar note could not be saved." }, { status: 500 });
+    }
+  }
+  if (error) return databaseMutationError(error, "The calendar note could not be saved.");
   return NextResponse.json({ note }, { status: 201 });
 }
 
@@ -45,6 +70,11 @@ export async function DELETE(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Choose a valid calendar note." }, { status: 400 });
 
   const { error } = await actor.admin.from("calendar_notes").delete().eq("id", parsed.data.id);
-  if (error) return NextResponse.json({ error: "The calendar note could not be removed." }, { status: 500 });
+  if (error && !isMigrationRequired(error)) return databaseMutationError(error, "The calendar note could not be removed.");
+  try {
+    await removeCompatibilityCalendarNote(parsed.data.id);
+  } catch {
+    if (error) return NextResponse.json({ error: "The calendar note could not be removed." }, { status: 500 });
+  }
   return NextResponse.json({ success: true });
 }

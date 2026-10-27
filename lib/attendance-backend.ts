@@ -32,13 +32,14 @@ const markPayloadSchema = z.object({
     heading: z.number().finite().min(0).max(360).nullable(),
     speed: z.number().finite().nonnegative().max(500).nullable(),
     captured_at: z.string().datetime(),
-  })).min(3).max(20),
+  })).max(20),
 });
 
 const DATABASE_MESSAGES: Record<string, [number, string]> = {
   CHALLENGE_ALREADY_USED: [409, "This verification has already been used. Start a new attendance check."],
   CHALLENGE_EXPIRED: [409, "The attendance check expired. Please capture your location again."],
   CHALLENGE_NOT_FOUND: [409, "The attendance check is no longer available. Please start again."],
+  CLOCK_IN_REQUIRED: [409, "Clock in before trying to clock out, or this workday is already complete."],
   CLOCK_IN_REQUIRED_OR_ALREADY_CLOSED: [409, "Clock in before trying to clock out, or this workday is already complete."],
   IP_ALREADY_USED_BY_ANOTHER_EMPLOYEE: [409, "This non-office internet address was already used by another employee today. Connect to the approved office network or contact an administrator."],
   IDEMPOTENCY_CONFLICT: [409, "This attendance request conflicts with an earlier request. Start a new check."],
@@ -48,7 +49,9 @@ const DATABASE_MESSAGES: Record<string, [number, string]> = {
   GPS_DISTANCE_MISMATCH: [403, "Location evidence failed the server check. Capture your location again."],
   GPS_EVIDENCE_INVALID: [403, "Location evidence was not strong enough. Keep the device still and try again."],
   GPS_OUTSIDE_BRANCH_RADIUS: [403, "Your verified location is outside the branch attendance radius."],
+  "42703": [503, "Attendance database setup is incomplete. Ask an administrator to apply the latest migration."],
   PGRST202: [503, "Attendance database setup is incomplete. Ask an administrator to apply the latest migration."],
+  PGRST204: [503, "Attendance database setup is incomplete. Ask an administrator to apply the latest migration."],
   PGRST205: [503, "Attendance database setup is incomplete. Ask an administrator to apply the latest migration."],
 };
 

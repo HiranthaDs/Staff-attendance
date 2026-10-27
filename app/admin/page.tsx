@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { localDateParts } from "@/lib/attendance";
+import { loadCalendarNotes } from "@/lib/calendar-notes";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
 import type { AttendanceRecord, Branch, BranchSetupInvite, BranchSetupSubmission, CalendarNote, LeaveRequest, Profile } from "@/lib/types";
 
@@ -16,7 +17,11 @@ export default async function AdminPage() {
   const leaveQuery = supabase.from("leave_requests").select("*, profile:profiles(full_name, employee_code, branch_id)").order("created_at", { ascending: false }).limit(100);
   const setupInvitesQuery = supabase.from("branch_setup_invites").select("id, proposed_name, proposed_code, radius_m, verification_mode, status, expires_at, created_at, submitted_at, approved_at").order("created_at", { ascending: false }).limit(100);
   const setupSubmissionsQuery = supabase.from("branch_setup_submissions").select("*, invite:branch_setup_invites(id, proposed_name, proposed_code, radius_m, verification_mode, status, expires_at, created_at, submitted_at, approved_at)").order("submitted_at", { ascending: false }).limit(100);
-  const calendarNotesQuery = supabase.from("calendar_notes").select("*, branch:branches(id, name, code)").gte("note_date", `${today.slice(0, 4)}-01-01`).lte("note_date", `${Number(today.slice(0, 4)) + 1}-12-31`).order("note_date");
+  const calendarNotesQuery = loadCalendarNotes({
+    startDate: `${today.slice(0, 4)}-01-01`,
+    endDate: `${Number(today.slice(0, 4)) + 1}-12-31`,
+    includeAllBranches: true,
+  });
 
   if (branchFilter) {
     staffQuery = staffQuery.eq("branch_id", branchFilter);
@@ -48,7 +53,7 @@ export default async function AdminPage() {
       initialLeaves={leaves}
       initialSetupInvites={(setupInvitesResult.data ?? []) as BranchSetupInvite[]}
       initialSetupSubmissions={(setupSubmissionsResult.data ?? []) as BranchSetupSubmission[]}
-      initialCalendarNotes={(calendarNotesResult.data ?? []) as CalendarNote[]}
+      initialCalendarNotes={calendarNotesResult as CalendarNote[]}
     />
   );
 }

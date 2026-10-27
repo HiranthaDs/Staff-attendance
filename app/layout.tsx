@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Manrope } from "next/font/google";
 import { PwaRegister } from "@/components/pwa-register";
+import { CalendarUpdateNotifier } from "@/components/calendar/calendar-update-notifier";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body className={`${inter.variable} ${manrope.variable}`}>
         {children}
+        <CalendarUpdateNotifier />
         <PwaRegister />
       </body>
     </html>

@@ -460,6 +460,7 @@ begin
     v_effective_early_leave_minutes := greatest(
       0,
       floor(extract(epoch from (v_expected_at - v_server_now)) / 60)::integer
+        - v_branch.early_leave_grace_minutes
     );
 
     update public.attendance_records set

@@ -34,11 +34,15 @@ create table if not exists public.branches (
   verification_mode public.verification_mode not null default 'gps_and_ip',
   max_accuracy_m integer not null default 80 check (max_accuracy_m between 10 and 250),
   late_grace_minutes integer not null default 10 check (late_grace_minutes between 0 and 120),
+  early_leave_grace_minutes integer not null default 10 check (early_leave_grace_minutes between 0 and 120),
   active boolean not null default true,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.branches
+  add column if not exists early_leave_grace_minutes integer not null default 10;
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,

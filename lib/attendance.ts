@@ -68,6 +68,19 @@ export function networkRuleForIp(raw: string) {
   }
 }
 
+export function calculateAttendanceTiming(input: {
+  currentMinutes: number;
+  arrivalMinutes: number;
+  departureMinutes: number;
+  lateGraceMinutes: number;
+  earlyLeaveGraceMinutes: number;
+}) {
+  return {
+    lateMinutes: Math.max(0, input.currentMinutes - input.arrivalMinutes - input.lateGraceMinutes),
+    earlyLeaveMinutes: Math.max(0, input.departureMinutes - input.currentMinutes - input.earlyLeaveGraceMinutes),
+  };
+}
+
 export type RequestIpEvidence = {
   ip: string | null;
   verified: boolean;

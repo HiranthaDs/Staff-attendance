@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { ipMatchesRule, isPublicIp, localDateParts, normalizeIp, timeToMinutes, type RequestIpEvidence } from "@/lib/attendance";
+import { calculateAttendanceTiming, ipMatchesRule, isPublicIp, localDateParts, normalizeIp, timeToMinutes, type RequestIpEvidence } from "@/lib/attendance";
 import { AttendanceGateway, type AttendanceContext, type AttendanceNetworkContext } from "@/lib/attendance-verifier/gateway";
 import { buildConsensus, distanceM, evaluateGeofence, GpsEvidenceError, type GpsConsensus, type LocationEvidenceSample } from "@/lib/attendance-verifier/gps";
 
-const POLICY_VERSION = "2026-10-27.v3-node";
+const POLICY_VERSION = "2026-10-27.v4-branch-grace";
 
 export type AttendanceAction = "clock_in" | "clock_out";
 
@@ -30,9 +30,9 @@ export type AttendanceMarkInput = AttendanceEnvelope & {
 export type VerificationChecks = {
   gps: boolean;
   wifi: boolean;
-  distanceM: number;
+  distanceM: number | null;
   radiusM: number;
-  accuracyM: number;
+  accuracyM: number | null;
   maxAccuracyM: number;
   consensusCount: number;
   sampleCount: number;
@@ -116,37 +116,44 @@ export async function markAttendance(
   gateway = new AttendanceGateway(),
   now = new Date(),
 ) {
-  validateCaptureWindow(request);
   const context = requireActiveContext(await gateway.loadAttendanceContext(request.actorUserId), request.actorUserId);
   const branch = context.branch;
   const clientIp = evidenceIp(request.ipEvidence);
   const network = matchingNetwork(clientIp, context.networks);
   const ipAllowed = Boolean(network);
+  const networkFallbackAllowed = branch.verification_mode === "gps_or_ip" && ipAllowed;
 
-  let consensus: GpsConsensus;
-  try {
-    consensus = buildConsensus(request.samples, { now });
-  } catch (error) {
-    if (!(error instanceof GpsEvidenceError)) throw error;
-    await gateway.recordDenial(invalidGpsDenialPayload({
-      request,
-      branchId: branch.id,
-      now,
-      clientIp,
-      network,
-      ipAllowed,
-      reason: error.message,
-    }));
-    throw new AttendanceServiceError(error.message, 403, "GPS_EVIDENCE_REJECTED");
+  let consensus: GpsConsensus | null = null;
+  if (request.samples.length) {
+    validateCaptureWindow(request);
+    try {
+      consensus = buildConsensus(request.samples, { now });
+    } catch (error) {
+      if (!(error instanceof GpsEvidenceError)) throw error;
+      if (!networkFallbackAllowed) {
+        await gateway.recordDenial(invalidGpsDenialPayload({
+          request,
+          branchId: branch.id,
+          now,
+          clientIp,
+          network,
+          ipAllowed,
+          reason: error.message,
+        }));
+        throw new AttendanceServiceError(error.message, 403, "GPS_EVIDENCE_REJECTED");
+      }
+    }
+  } else if (!networkFallbackAllowed) {
+    throw new AttendanceServiceError("Live location is required for this branch attendance policy.", 403, "GPS_EVIDENCE_REQUIRED");
   }
 
-  const distance = distanceM(branch.latitude, branch.longitude, consensus.latitude, consensus.longitude);
-  const gps = evaluateGeofence({
-    distanceFromBranchM: distance,
+  const distance = consensus ? distanceM(branch.latitude, branch.longitude, consensus.latitude, consensus.longitude) : null;
+  const gps = consensus ? evaluateGeofence({
+    distanceFromBranchM: distance!,
     effectiveAccuracyM: consensus.effectiveAccuracyM,
     radiusM: branch.radius_m,
     maxAccuracyM: branch.max_accuracy_m,
-  });
+  }) : { allowed: false, method: "none" as const, reason: "Live location was unavailable; checking the approved office network instead." };
   const hasNetworks = context.networks.length > 0;
   let allowed: boolean;
   if (branch.verification_mode === "gps_and_ip") allowed = gps.allowed && ipAllowed && hasNetworks;
@@ -157,14 +164,14 @@ export async function markAttendance(
   const checks: VerificationChecks = {
     gps: gps.allowed,
     wifi: ipAllowed,
-    distanceM: Math.round(distance),
+    distanceM: distance === null ? null : Math.round(distance),
     radiusM: branch.radius_m,
-    accuracyM: Math.round(consensus.effectiveAccuracyM),
+    accuracyM: consensus ? Math.round(consensus.effectiveAccuracyM) : null,
     maxAccuracyM: branch.max_accuracy_m,
-    consensusCount: consensus.consensusCount,
-    sampleCount: consensus.sampleCount,
-    sampleSpanMs: consensus.sampleSpanMs,
-    spreadM: Math.round(consensus.spreadM),
+    consensusCount: consensus?.consensusCount ?? 0,
+    sampleCount: consensus?.sampleCount ?? 0,
+    sampleSpanMs: consensus?.sampleSpanMs ?? 0,
+    spreadM: consensus ? Math.round(consensus.spreadM) : 0,
     gpsMethod: gps.method === "precise_radius" ? "precise" : gps.method,
     verificationMethod: gps.allowed && gps.method === "precise_radius"
       ? "precise_gps"
@@ -185,7 +192,8 @@ export async function markAttendance(
     throw new AttendanceServiceError(reason, 403, "PRESENCE_NOT_VERIFIED");
   }
 
-  const result = await gateway.recordMark(common);
+  const attendanceDate = localDateParts(now, branch.timezone).date;
+  const result = await gateway.recordMark(common, attendanceDate);
   const possibleRecord = result.record;
   const record = possibleRecord && typeof possibleRecord === "object"
     ? possibleRecord as Record<string, unknown>
@@ -220,7 +228,7 @@ function validateCaptureWindow(request: AttendanceMarkInput) {
 function rpcPayload(input: {
   request: AttendanceMarkInput;
   context: AttendanceContext & { branch: NonNullable<AttendanceContext["branch"]> };
-  consensus: GpsConsensus;
+  consensus: GpsConsensus | null;
   checks: VerificationChecks;
   clientIp: string | null;
   now: Date;
@@ -236,8 +244,13 @@ function rpcPayload(input: {
   if (![arrival, departure].every(Number.isFinite)) {
     throw new AttendanceServiceError("Employee work hours are invalid.", 500, "PROFILE_CONFIG");
   }
-  const lateMinutes = Math.max(0, currentMinutes - arrival - input.context.branch.late_grace_minutes);
-  const earlyLeaveMinutes = Math.max(0, departure - currentMinutes);
+  const { lateMinutes, earlyLeaveMinutes } = calculateAttendanceTiming({
+    currentMinutes,
+    arrivalMinutes: arrival,
+    departureMinutes: departure,
+    lateGraceMinutes: input.context.branch.late_grace_minutes,
+    earlyLeaveGraceMinutes: input.context.branch.early_leave_grace_minutes ?? 0,
+  });
   return {
     p_user_id: input.request.actorUserId,
     p_branch_id: input.context.branch.id,
@@ -245,8 +258,8 @@ function rpcPayload(input: {
     p_now: input.now.toISOString(),
     p_request_id: input.request.challengeId,
     p_challenge_id: input.request.challengeId,
-    p_latitude: input.consensus.latitude,
-    p_longitude: input.consensus.longitude,
+    p_latitude: input.consensus?.latitude ?? null,
+    p_longitude: input.consensus?.longitude ?? null,
     p_accuracy_m: input.checks.accuracyM,
     p_distance_m: input.checks.distanceM,
     p_client_ip: input.clientIp,

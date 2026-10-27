@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "db:migrate": "node scripts/apply-migration.mjs",
+    "db:migrate": "node --env-file=.env.local scripts/apply-migration.mjs",
     "db:bootstrap-admin": "node --env-file=.env.local scripts/bootstrap-admin.mjs",
     "verify:live": "node --env-file=.env.local scripts/verify-live.mjs",
     "verify:app": "node --env-file=.env.local scripts/verify-app.mjs",

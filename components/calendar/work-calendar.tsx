@@ -1,14 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { addDays, addMonths, format, isSameMonth, parseISO, startOfMonth } from "date-fns";
-import { CalendarDays, ChevronLeft, ChevronRight, MapPin, Moon, Plus, StickyNote, Trash2, X } from "lucide-react";
+import { addDays, addMonths, eachDayOfInterval, format, isSameMonth, parseISO, startOfMonth } from "date-fns";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, Moon, Palmtree, Plus, StickyNote, Trash2, X } from "lucide-react";
 import { sriLankaHolidaysForYear, type SriLankaHoliday } from "@/lib/sri-lanka-holidays";
-import type { Branch, CalendarNote } from "@/lib/types";
+import type { AttendanceRecord, Branch, CalendarNote, LeaveRequest } from "@/lib/types";
 
 type CalendarItem =
   | { id: string; date: string; title: string; description: string | null; kind: "note"; branchName: string | null; note: CalendarNote }
-  | { id: string; date: string; title: string; description: null; kind: SriLankaHoliday["kind"]; branchName: null };
+  | { id: string; date: string; title: string; description: null; kind: SriLankaHoliday["kind"]; branchName: null }
+  | { id: string; date: string; title: string; description: string; kind: "leave" | "short_leave" | "timing"; branchName: null };
 
 export function WorkCalendar({
   today,
@@ -16,20 +17,30 @@ export function WorkCalendar({
   canManage = false,
   branches = [],
   title = "Calendar & schedule",
+  attendance = [],
+  leaves = [],
 }: {
   today: string;
   initialNotes: CalendarNote[];
   canManage?: boolean;
   branches?: Branch[];
   title?: string;
+  attendance?: AttendanceRecord[];
+  leaves?: LeaveRequest[];
 }) {
   const todayDate = parseISO(`${today}T12:00:00`);
   const [visibleMonth, setVisibleMonth] = useState(startOfMonth(todayDate));
   const [selectedDate, setSelectedDate] = useState(today);
-  const [notes, setNotes] = useState(initialNotes);
+  const [addedNotes, setAddedNotes] = useState<CalendarNote[]>([]);
+  const [deletedNoteIds, setDeletedNoteIds] = useState<string[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const notes = useMemo(() => {
+    const byId = new Map([...initialNotes, ...addedNotes].map((note) => [note.id, note]));
+    return [...byId.values()].filter((note) => !deletedNoteIds.includes(note.id));
+  }, [addedNotes, deletedNoteIds, initialNotes]);
 
   const monthItems = useMemo<CalendarItem[]>(() => {
     const holidays: CalendarItem[] = sriLankaHolidaysForYear(visibleMonth.getFullYear()).map((holiday, index) => ({
@@ -49,8 +60,22 @@ export function WorkCalendar({
       branchName: note.branch?.name ?? null,
       note,
     }));
-    return [...holidays, ...noteItems];
-  }, [notes, visibleMonth]);
+    const leaveItems: CalendarItem[] = leaves
+      .filter((leave) => leave.status === "approved")
+      .flatMap((leave) => eachDayOfInterval({ start: parseISO(`${leave.start_date}T12:00:00`), end: parseISO(`${leave.end_date}T12:00:00`) }).map((day) => ({
+        id: `leave-${leave.id}-${format(day, "yyyy-MM-dd")}`,
+        date: format(day, "yyyy-MM-dd"),
+        title: leave.portion === "full_day" ? `${labelLeaveType(leave.leave_type)} leave` : "Short leave",
+        description: `${leave.portion === "full_day" ? "Full day" : leave.portion === "first_half" ? "First half" : "Second half"} · ${leave.reason}`,
+        kind: leave.portion === "full_day" ? "leave" as const : "short_leave" as const,
+        branchName: null,
+      })));
+    const timingItems: CalendarItem[] = attendance.filter((record) => record.late_minutes > 0 || record.early_leave_minutes > 0).map((record) => {
+      const timing = [record.late_minutes > 0 ? `${record.late_minutes} min late` : "", record.early_leave_minutes > 0 ? `${record.early_leave_minutes} min early departure` : ""].filter(Boolean);
+      return { id: `timing-${record.id}`, date: record.attendance_date, title: timing.join(" · "), description: "Outside the branch's saved attendance tolerance.", kind: "timing", branchName: null };
+    });
+    return [...holidays, ...noteItems, ...leaveItems, ...timingItems];
+  }, [attendance, leaves, notes, visibleMonth]);
 
   const calendarDays = useMemo(() => {
     const first = startOfMonth(visibleMonth);
@@ -82,7 +107,7 @@ export function WorkCalendar({
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "The calendar note could not be saved.");
-      setNotes((current) => [...current, result.note as CalendarNote]);
+      setAddedNotes((current) => [...current, result.note as CalendarNote]);
       setSelectedDate((result.note as CalendarNote).note_date);
       setEditorOpen(false);
     } catch (reason) {
@@ -99,7 +124,10 @@ export function WorkCalendar({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id: note.id }),
     });
-    if (response.ok) setNotes((current) => current.filter((item) => item.id !== note.id));
+    if (response.ok) {
+      setDeletedNoteIds((current) => [...current, note.id]);
+      setAddedNotes((current) => current.filter((item) => item.id !== note.id));
+    }
   }
 
   return <>
@@ -130,19 +158,22 @@ export function WorkCalendar({
               const hasPoya = items.some((item) => item.kind === "poya");
               const hasHoliday = items.some((item) => item.kind === "public");
               const hasNote = items.some((item) => item.kind === "note");
+              const hasLeave = items.some((item) => item.kind === "leave");
+              const hasShortLeave = items.some((item) => item.kind === "short_leave");
+              const hasTiming = items.some((item) => item.kind === "timing");
               return <button
                 key={date}
-                className={`${!isSameMonth(day, visibleMonth) ? "outside" : ""} ${date === today ? "today" : ""} ${date === selectedDate ? "selected" : ""} ${hasPoya ? "has-poya" : ""} ${hasHoliday ? "has-holiday" : ""} ${hasNote ? "has-note" : ""}`}
+                className={`${!isSameMonth(day, visibleMonth) ? "outside" : ""} ${date === today ? "today" : ""} ${date === selectedDate ? "selected" : ""} ${hasPoya ? "has-poya" : ""} ${hasHoliday ? "has-holiday" : ""} ${hasNote ? "has-note" : ""} ${hasLeave ? "has-leave" : ""} ${hasShortLeave ? "has-short-leave" : ""} ${hasTiming ? "has-timing" : ""}`}
                 onClick={() => setSelectedDate(date)}
                 aria-label={`${format(day, "d MMMM yyyy")}${items.length ? `, ${items.map((item) => item.title).join(", ")}` : ""}`}
               >
                 <time>{format(day, "d")}</time>
                 <span className="calendar-cell-label">{items[0]?.title}</span>
-                <span className="calendar-dots" aria-hidden="true">{hasPoya && <i className="poya" />}{hasHoliday && <i className="holiday" />}{hasNote && <i className="note" />}</span>
+                <span className="calendar-dots" aria-hidden="true">{hasPoya && <i className="poya" />}{hasHoliday && <i className="holiday" />}{hasNote && <i className="note" />}{hasLeave && <i className="leave" />}{hasShortLeave && <i className="short-leave" />}{hasTiming && <i className="timing" />}</span>
               </button>;
             })}
           </div>
-          <div className="calendar-legend"><span><i className="poya" /> Poya day</span><span><i className="holiday" /> Public holiday</span><span><i className="note" /> Team note</span><span><i className="today" /> Today</span></div>
+          <div className="calendar-legend"><span><i className="poya" /> Poya day</span><span><i className="holiday" /> Public holiday</span><span><i className="note" /> Team note</span>{leaves.length > 0 && <><span><i className="leave" /> Leave</span><span><i className="short-leave" /> Short leave</span></>}{attendance.length > 0 && <span><i className="timing" /> Late / early</span>}<span><i className="today" /> Today</span></div>
         </div>
 
         <aside className="calendar-agenda">
@@ -150,8 +181,8 @@ export function WorkCalendar({
           <div className="agenda-list">
             {selectedItems.length === 0 && <div className="agenda-empty"><CalendarDays size={23} /><strong>A clear day</strong><span>No holiday or team note is scheduled.</span>{canManage && <button onClick={() => setEditorOpen(true)}>Add a note</button>}</div>}
             {selectedItems.map((item) => <article className={`agenda-item ${item.kind}`} key={item.id}>
-              <span>{item.kind === "poya" ? <Moon size={18} /> : item.kind === "note" ? <StickyNote size={18} /> : <CalendarDays size={18} />}</span>
-              <div><small>{item.kind === "poya" ? "FULL MOON POYA" : item.kind === "note" ? item.branchName ? item.branchName : "ALL BRANCHES" : "PUBLIC HOLIDAY"}</small><strong>{item.title}</strong>{item.description && <p>{item.description}</p>}</div>
+              <span>{item.kind === "poya" ? <Moon size={18} /> : item.kind === "note" ? <StickyNote size={18} /> : item.kind === "leave" || item.kind === "short_leave" ? <Palmtree size={18} /> : item.kind === "timing" ? <Clock3 size={18} /> : <CalendarDays size={18} />}</span>
+              <div><small>{item.kind === "poya" ? "FULL MOON POYA" : item.kind === "note" ? item.branchName ? item.branchName : "ALL BRANCHES" : item.kind === "leave" ? "APPROVED LEAVE" : item.kind === "short_leave" ? "APPROVED SHORT LEAVE" : item.kind === "timing" ? "ATTENDANCE TIMING" : "PUBLIC HOLIDAY"}</small><strong>{item.title}</strong>{item.description && <p>{item.description}</p>}</div>
               {canManage && item.kind === "note" && <button onClick={() => deleteNote(item.note)} aria-label={`Delete ${item.title}`}><Trash2 size={16} /></button>}
             </article>)}
           </div>
@@ -168,4 +199,8 @@ export function WorkCalendar({
       <div className="modal-actions"><button type="button" className="button button-ghost" onClick={() => setEditorOpen(false)}>Cancel</button><button className="button button-primary" disabled={saving}>{saving ? "Saving…" : "Publish note"}</button></div>
     </form></div></div>}
   </>;
+}
+
+function labelLeaveType(value: LeaveRequest["leave_type"]) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }

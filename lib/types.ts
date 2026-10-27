@@ -30,6 +30,7 @@ export type Branch = {
   verification_mode: "gps_and_ip" | "gps_or_ip" | "gps_only";
   max_accuracy_m: number;
   late_grace_minutes: number;
+  early_leave_grace_minutes: number;
   active: boolean;
   branch_networks?: BranchNetwork[];
 };
@@ -67,7 +68,7 @@ export type AttendanceRecord = {
   early_leave_minutes: number;
   clock_in_distance_m: number | null;
   clock_out_distance_m: number | null;
-  profile?: Pick<Profile, "full_name" | "employee_code">;
+  profile?: Pick<Profile, "full_name" | "employee_code" | "branch_id">;
   branch?: Pick<Branch, "name" | "code">;
 };
 

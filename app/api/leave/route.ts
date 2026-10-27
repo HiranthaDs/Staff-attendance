@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getApiActor } from "@/lib/api-auth";
 import { localDateParts } from "@/lib/attendance";
-import { isSriLankaHoliday } from "@/lib/sri-lanka-holidays";
+import { businessLeaveDays } from "@/lib/leave";
 
 const schema = z.object({
   start_date: z.string().date(),
@@ -11,18 +11,6 @@ const schema = z.object({
   portion: z.enum(["full_day", "first_half", "second_half"]),
   reason: z.string().trim().min(4).max(500),
 });
-
-function businessDays(start: string, end: string, half: boolean) {
-  const first = new Date(`${start}T12:00:00Z`);
-  const last = new Date(`${end}T12:00:00Z`);
-  let count = 0;
-  for (let cursor = first; cursor <= last; cursor = new Date(cursor.getTime() + 86_400_000)) {
-    const day = cursor.getUTCDay();
-    const date = cursor.toISOString().slice(0, 10);
-    if (day !== 0 && day !== 6 && !isSriLankaHoliday(date)) count += 1;
-  }
-  return half && start === end ? 0.5 : count;
-}
 
 export async function POST(request: Request) {
   const actor = await getApiActor();
@@ -44,7 +32,7 @@ export async function POST(request: Request) {
   if (input.leave_type === "annual" && input.start_date.slice(0, 4) !== input.end_date.slice(0, 4)) {
     return NextResponse.json({ error: "Submit separate annual leave requests for each calendar year." }, { status: 400 });
   }
-  const days = businessDays(input.start_date, input.end_date, input.portion !== "full_day");
+  const days = businessLeaveDays(input.start_date, input.end_date, input.portion !== "full_day");
   if (days <= 0) return NextResponse.json({ error: "The selected dates contain no working days." }, { status: 400 });
 
   const { data: overlap } = await actor.admin.from("leave_requests").select("id").eq("user_id", actor.user.id).in("status", ["pending", "approved"]).lte("start_date", input.end_date).gte("end_date", input.start_date).limit(1);

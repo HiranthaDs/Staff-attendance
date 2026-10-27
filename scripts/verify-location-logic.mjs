@@ -168,7 +168,7 @@ const sampled = await captureBestBrowserLocation({
 assert.ok(sampled.accuracy >= 30);
 assert.equal(sampled.sampleCount, 4);
 assert.equal(sampled.consensusCount, 3);
-assert.equal(sampled.samples.length, 4);
+assert.equal(sampled.samples.length, 3);
 assert.ok(sampled.captureStartedAt);
 assert.ok(sampled.captureEndedAt);
 assert.ok(sampled.captureDurationMs >= 1_500);

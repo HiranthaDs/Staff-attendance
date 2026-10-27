@@ -1,5 +1,10 @@
+import { createHash } from "node:crypto";
 import type { PostgrestError } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  createCompatibilityChallenge,
+  verifyCompatibilityChallenge,
+} from "@/lib/attendance-verifier/compatibility-challenge";
 
 const SAFE_DATABASE_SIGNALS = new Set([
   "ATTENDANCE_BRANCH_CONFLICT",
@@ -11,6 +16,7 @@ const SAFE_DATABASE_SIGNALS = new Set([
   "CHALLENGE_IP_BINDING_MISMATCH",
   "CHALLENGE_NOT_FOUND",
   "CLIENT_IP_NETWORK_MISMATCH",
+  "CLOCK_IN_REQUIRED",
   "CLOCK_IN_REQUIRED_OR_ALREADY_CLOSED",
   "EMPLOYEE_BRANCH_MISMATCH",
   "EMPLOYEE_INACTIVE_OR_NOT_FOUND",
@@ -25,6 +31,51 @@ const SAFE_DATABASE_SIGNALS = new Set([
   "PRESENCE_NOT_VERIFIED",
   "STALE_REQUEST_TIME",
 ]);
+
+const MIGRATION_ERROR_CODES = new Set(["42703", "PGRST202", "PGRST204", "PGRST205"]);
+
+function isMigrationError(error: PostgrestError | null) {
+  return Boolean(error?.code && MIGRATION_ERROR_CODES.has(error.code));
+}
+
+function challengeTtlSeconds() {
+  const parsed = Number(process.env.ATTENDANCE_CHALLENGE_TTL_SECONDS ?? 90);
+  return Number.isInteger(parsed) && parsed >= 30 && parsed <= 300 ? parsed : 90;
+}
+
+function requiredPayloadText(payload: Record<string, unknown>, key: string) {
+  const value = payload[key];
+  if (typeof value !== "string" || !value) {
+    throw new AttendanceStorageError("attendance compatibility payload is invalid", 400, "INVALID_PAYLOAD");
+  }
+  return value;
+}
+
+function assertCompatibilityChallenge(payload: Record<string, unknown>) {
+  const userId = requiredPayloadText(payload, "p_user_id");
+  const branchId = requiredPayloadText(payload, "p_branch_id");
+  const action = requiredPayloadText(payload, "p_action");
+  const challengeId = requiredPayloadText(payload, "p_challenge_id");
+  if (action !== "clock_in" && action !== "clock_out") {
+    throw new AttendanceStorageError("attendance action is invalid", 400, "INVALID_PAYLOAD");
+  }
+  const clientIp = typeof payload.p_client_ip === "string" && payload.p_client_ip
+    ? payload.p_client_ip
+    : null;
+  const challengeState = verifyCompatibilityChallenge(challengeId, {
+    userId,
+    branchId,
+    action,
+    ipHash: clientIp ? createHash("sha256").update(clientIp, "ascii").digest("hex") : null,
+  }, { ttlSeconds: challengeTtlSeconds() });
+  if (challengeState === "expired") {
+    throw new AttendanceStorageError("attendance compatibility challenge expired", 409, "CHALLENGE_EXPIRED");
+  }
+  if (challengeState !== "valid") {
+    throw new AttendanceStorageError("attendance compatibility challenge is invalid", 409, "CHALLENGE_NOT_FOUND");
+  }
+  return { userId, branchId, action, clientIp };
+}
 
 export type AttendanceProfileContext = {
   id: string;
@@ -46,6 +97,7 @@ export type AttendanceBranchContext = {
   verification_mode: "gps_and_ip" | "gps_or_ip" | "gps_only";
   max_accuracy_m: number;
   late_grace_minutes: number;
+  early_leave_grace_minutes: number;
   active: boolean;
 };
 
@@ -100,18 +152,29 @@ export class AttendanceGateway {
     const profile = profileResult.data as AttendanceProfileContext;
     if (!profile.branch_id) return { profile, branch: null, networks: [] };
 
-    const [branchResult, networkResult] = await Promise.all([
-      this.client
+    let branchResult = await this.client
+      .from("branches")
+      .select("id, name, latitude, longitude, radius_m, timezone, verification_mode, max_accuracy_m, late_grace_minutes, early_leave_grace_minutes, active")
+      .eq("id", profile.branch_id)
+      .maybeSingle();
+    if (isMigrationError(branchResult.error)) {
+      const legacyBranchResult = await this.client
         .from("branches")
         .select("id, name, latitude, longitude, radius_m, timezone, verification_mode, max_accuracy_m, late_grace_minutes, active")
         .eq("id", profile.branch_id)
-        .maybeSingle(),
-      this.client
-        .from("branch_networks")
-        .select("id, branch_id, label, ip_rule, active")
-        .eq("branch_id", profile.branch_id)
-        .eq("active", true),
-    ]);
+        .maybeSingle();
+      branchResult = {
+        ...legacyBranchResult,
+        data: legacyBranchResult.data
+          ? { ...legacyBranchResult.data, early_leave_grace_minutes: 0 }
+          : null,
+      } as typeof branchResult;
+    }
+    const networkResult = await this.client
+      .from("branch_networks")
+      .select("id, branch_id, label, ip_rule, active")
+      .eq("branch_id", profile.branch_id)
+      .eq("active", true);
     if (branchResult.error) throw storageError(branchResult.error, branchResult.status);
     if (networkResult.error) throw storageError(networkResult.error, networkResult.status);
     return {
@@ -138,12 +201,54 @@ export class AttendanceGateway {
       ip_hash: input.ipHash,
       expires_at: input.expiresAt.toISOString(),
     }).select("id, expires_at").single();
+    if (isMigrationError(result.error)) {
+      const ttlSeconds = challengeTtlSeconds();
+      const issuedAt = new Date(input.expiresAt.getTime() - ttlSeconds * 1_000);
+      try {
+        return {
+          id: createCompatibilityChallenge({
+            userId: input.userId,
+            branchId: input.branchId,
+            action: input.action,
+            ipHash: input.ipHash,
+          }, issuedAt),
+          expires_at: input.expiresAt.toISOString(),
+        };
+      } catch {
+        throw new AttendanceStorageError("attendance compatibility challenge could not be created", 503, "SERVER_CONFIG");
+      }
+    }
     if (result.error || !result.data) throw storageError(result.error, result.status);
     return result.data as { id: string; expires_at: string };
   }
 
-  async recordMark(payload: Record<string, unknown>) {
+  async recordMark(payload: Record<string, unknown>, attendanceDate: string) {
     const result = await this.client.rpc("record_attendance_mark_v2", payload);
+    if (isMigrationError(result.error)) {
+      const { userId, branchId, action, clientIp } = assertCompatibilityChallenge(payload);
+
+      const legacyResult = await this.client.rpc("record_attendance_mark", {
+        p_user_id: userId,
+        p_branch_id: branchId,
+        p_attendance_date: attendanceDate,
+        p_action: action,
+        p_now: payload.p_now,
+        p_latitude: payload.p_latitude,
+        p_longitude: payload.p_longitude,
+        p_accuracy_m: payload.p_accuracy_m,
+        p_distance_m: payload.p_distance_m,
+        p_client_ip: clientIp,
+        p_gps_passed: payload.p_gps_passed,
+        p_ip_passed: payload.p_ip_passed,
+        p_status: payload.p_status,
+        p_late_minutes: payload.p_late_minutes,
+        p_early_leave_minutes: payload.p_early_leave_minutes,
+      });
+      if (legacyResult.error) throw storageError(legacyResult.error, legacyResult.status);
+      const legacyData = recordFromRpc(legacyResult.data);
+      if (!legacyData) throw new AttendanceStorageError("attendance function returned an invalid response");
+      return legacyData;
+    }
     if (result.error) throw storageError(result.error, result.status);
     const data = recordFromRpc(result.data);
     if (!data) throw new AttendanceStorageError("attendance function returned an invalid response");
@@ -152,6 +257,25 @@ export class AttendanceGateway {
 
   async recordDenial(payload: Record<string, unknown>) {
     const result = await this.client.rpc("record_attendance_denial_v2", payload);
+    if (isMigrationError(result.error)) {
+      assertCompatibilityChallenge(payload);
+      const legacyResult = await this.client.from("attendance_attempts").insert({
+        user_id: payload.p_user_id,
+        branch_id: payload.p_branch_id,
+        action: payload.p_action,
+        allowed: false,
+        reason: typeof payload.p_reason === "string" ? payload.p_reason.slice(0, 500) : "Attendance verification failed",
+        latitude: payload.p_latitude,
+        longitude: payload.p_longitude,
+        accuracy_m: payload.p_accuracy_m,
+        distance_m: payload.p_distance_m,
+        client_ip: payload.p_client_ip,
+        gps_passed: Boolean(payload.p_gps_passed),
+        ip_passed: Boolean(payload.p_ip_passed),
+      });
+      if (legacyResult.error) throw storageError(legacyResult.error, legacyResult.status);
+      return;
+    }
     if (result.error) throw storageError(result.error, result.status);
   }
 }

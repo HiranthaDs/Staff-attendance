@@ -11,7 +11,7 @@ Presence is a production-oriented office attendance and leave PWA built with Nex
 - Secure, expiring, one-time branch-detail links for remote office setup
 - One-tap branch capture for GPS, accuracy, public IP, network quality and device details
 - Super-admin review and approval before a submitted office becomes an active branch
-- Strict `GPS + office public IP`, flexible `GPS or IP`, and `GPS only` verification modes
+- Required `location + office public IP`, flexible `location or IP`, and `location only` verification modes
 - Short-lived, single-use attendance challenges bound to the employee, action, branch and observed IP
 - Raw multi-sample GPS evidence recomputed by server-only Node.js code on both clock-in and clock-out
 - Confidence-aware geofencing that can safely use a coarse reading only when its full uncertainty circle fits inside the office zone
@@ -21,10 +21,12 @@ Presence is a production-oriented office attendance and leave PWA built with Nex
 - Atomic, idempotent attendance writes and a full allowed/denied attempt audit trail
 - One record per employee per branch-local day, including safe after-midnight clock-out
 - One employee per non-office IP and day; approved office NAT addresses remain shareable
-- Arrival grace periods, late minutes, early-leave minutes and work-duration calculation
+- Branch-level late-arrival and early-departure grace periods, timing flags and work-duration calculation
 - Staff creation with a temporary password and forced first-login password reset
 - Monthly and annual leave allowances, employee requests and admin approvals
 - Staff calendar with gazetted Sri Lankan public holidays, Poya days and super-admin notes for all or selected branches
+- Live in-app/browser alerts when an administrator changes the shared calendar
+- Full employee profile pages, year-to-date hour totals and admin employee calendars with leave, short-leave and timing colors
 - Responsive employee and admin experiences
 - Installable PWA shell with offline-safe behavior (attendance is intentionally never queued offline)
 - Database RLS, server-only secret-key use and protected administrator APIs
@@ -33,7 +35,7 @@ Presence is a production-oriented office attendance and leave PWA built with Nex
 
 Attendance approval happens only in server-side Node.js code inside authenticated Next.js Route Handlers. The server reads the public IP only from an explicitly trusted platform/proxy path, reloads the employee, branch and active network rules from Supabase, recomputes GPS consensus, freshness, spread and distance from raw readings, and calls service-only PostgreSQL functions. Browser clients cannot call those functions or choose their own branch policy. PostgreSQL independently rechecks challenge binding, GPS distance, account and branch state, replay status, network matching, idempotency and daily uniqueness inside one transaction.
 
-The recommended production mode is **GPS + office public IP**. Give each branch a static public IP from its internet provider. A dynamic IP can change unexpectedly and block legitimate staff until the admin updates the rule. The configured radius is the valid area—an employee does not need to stand on the exact map pin. A precise consensus point inside the radius passes; a coarser reading passes only when its whole uncertainty circle fits inside the radius.
+The recommended production mode is **location + office public IP required**. Give each branch a static public IP from its internet provider. A dynamic IP can change unexpectedly and block legitimate staff until the admin updates the rule. The configured radius is the valid area—an employee does not need to stand on the exact map pin. A precise consensus point inside the radius passes; a coarser reading passes only when its whole uncertainty circle fits inside the radius.
 
 An office public IP is shared by employees behind the same router, so it cannot safely be globally limited to one employee. Presence instead keeps the database guarantee of one attendance record per employee/day and prevents an unapproved, non-office IP from being claimed by two employees at the same branch/day.
 
@@ -69,6 +71,8 @@ No browser-only system can make location spoofing mathematically impossible. A P
 
 The base schema and every additive migration are in [`supabase/migrations`](supabase/migrations). Apply all migrations in filename order; they create branch setup, short-lived attendance challenges, atomic v2 attendance functions, calendar notes and the current least-privilege policies.
 
+If attendance displays **“Attendance database setup is incomplete”**, the deployed database does not have the v2 challenge/RPC migration. Run `npm run db:migrate`, enter the Supabase database password, and restart or redeploy the app. The migrator is additive and applies every SQL file in filename order.
+
 ## Deploy to Vercel
 
 Import this repository into Vercel as a Next.js project. No separate backend, Docker service, custom build command or output directory is required. Add these variables to Production, Preview and Development:
@@ -95,7 +99,7 @@ Vercel supplies the trusted client-IP header used by the attendance verifier. HT
    Alternatively, open **Settings → Branch setup**, generate a secure link and send it to the branch manager. Their captured details remain pending until the super admin approves them.
 3. While physically connected to the office Wi-Fi, use **Use my current IP**.
 4. Confirm the branch internet connection has a static public IP.
-5. Create staff accounts, assign work hours and leave allowances, then share temporary credentials securely.
+5. Save each branch's allowed late-arrival and early-departure tolerance, create staff accounts, assign work hours and leave allowances, then share temporary credentials securely.
 6. Test clock-in and clock-out from a real mobile phone before rollout.
 
 ## Verification commands

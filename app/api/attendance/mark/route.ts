@@ -26,7 +26,7 @@ const markSchema = z.object({
   clientRequestId: z.string().uuid(),
   captureStartedAt: z.string().datetime(),
   captureEndedAt: z.string().datetime(),
-  samples: z.array(sampleSchema).min(3).max(20),
+  samples: z.array(sampleSchema).max(20),
 });
 
 export async function POST(request: Request) {

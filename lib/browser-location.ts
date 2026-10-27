@@ -162,10 +162,6 @@ export function captureBestBrowserLocation(
         if (atDeadline) fail("No fresh location reading was received. Turn on precise location and try again.");
         return;
       }
-      if (consensus.ambiguous) {
-        if (atDeadline) fail("Location readings disagree. Keep the device still in one place and try again.");
-        return;
-      }
       if (consensus.consensusCount < minimumConsensusSamples) {
         if (atDeadline) fail(`Only ${consensus.consensusCount} matching location reading${consensus.consensusCount === 1 ? " was" : "s were"} received. Keep the device still and retry.`);
         return;
@@ -202,7 +198,7 @@ export function captureBestBrowserLocation(
         captureDurationMs: endedAt - startedAt,
         captureStartedAt: new Date(startedAt).toISOString(),
         captureEndedAt: new Date(endedAt).toISOString(),
-        samples: samples.slice(-20).map(toBrowserLocationSample),
+        samples: consensusSamples.slice(-20).map(toBrowserLocationSample),
       });
     };
 
@@ -289,7 +285,7 @@ function samplesAgree(first: GeolocationPosition, second: GeolocationPosition) {
 }
 
 function agreementDistanceM(first: GeolocationPosition, second: GeolocationPosition) {
-  return Math.max(20, Math.min(80, Math.max(first.coords.accuracy, second.coords.accuracy) * 0.6));
+  return Math.max(30, Math.min(120, Math.max(first.coords.accuracy, second.coords.accuracy)));
 }
 
 function isDuplicateSample(samples: GeolocationPosition[], candidate: GeolocationPosition) {

@@ -6,6 +6,11 @@ import {
   evaluateGeofence,
   type LocationEvidenceSample,
 } from "../lib/attendance-verifier/gps.ts";
+import { calculateAttendanceTiming } from "../lib/attendance.ts";
+import {
+  createCompatibilityChallenge,
+  verifyCompatibilityChallenge,
+} from "../lib/attendance-verifier/compatibility-challenge.ts";
 
 const now = new Date("2026-10-27T08:30:00.000Z");
 const stableSamples: LocationEvidenceSample[] = [
@@ -53,4 +58,25 @@ assert.equal(evaluateGeofence({ distanceFromBranchM: 100, effectiveAccuracyM: 12
 assert.ok(distanceM(0, 0, 0.001, 0) > 111);
 assert.ok(new GpsEvidenceError("test") instanceof Error);
 
-console.log("Server attendance verifier checks passed: consensus, outlier rejection, freshness, geofence, and uncertainty containment.");
+assert.deepEqual(calculateAttendanceTiming({ currentMinutes: 8 * 60 + 40, arrivalMinutes: 8 * 60 + 30, departureMinutes: 17 * 60, lateGraceMinutes: 10, earlyLeaveGraceMinutes: 10 }), { lateMinutes: 0, earlyLeaveMinutes: 490 });
+assert.deepEqual(calculateAttendanceTiming({ currentMinutes: 16 * 60 + 55, arrivalMinutes: 8 * 60 + 30, departureMinutes: 17 * 60, lateGraceMinutes: 10, earlyLeaveGraceMinutes: 10 }), { lateMinutes: 495, earlyLeaveMinutes: 0 });
+
+const previousChallengeSecret = process.env.ATTENDANCE_CHALLENGE_SECRET;
+process.env.ATTENDANCE_CHALLENGE_SECRET = "attendance-verifier-test-secret-with-sufficient-entropy";
+const binding = {
+  userId: "0ad4fd1f-2936-43ba-b7b8-00b14824ce7b",
+  branchId: "20b2577b-cafc-464e-9496-e95027747519",
+  action: "clock_in" as const,
+  ipHash: "c3f1a341c2a1109df9fd3190f45691bdb90ca2a0a129baa8236474236939f607",
+};
+const compatibilityChallenge = createCompatibilityChallenge(binding, now);
+assert.match(compatibilityChallenge, /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+assert.equal(verifyCompatibilityChallenge(compatibilityChallenge, binding, { now, ttlSeconds: 90 }), "valid");
+assert.equal(verifyCompatibilityChallenge(compatibilityChallenge, { ...binding, action: "clock_out" }, { now, ttlSeconds: 90 }), "invalid");
+assert.equal(verifyCompatibilityChallenge(compatibilityChallenge, binding, { now: new Date(now.getTime() + 91_000), ttlSeconds: 90 }), "expired");
+const tamperedChallenge = `${compatibilityChallenge.slice(0, -1)}${compatibilityChallenge.endsWith("0") ? "1" : "0"}`;
+assert.equal(verifyCompatibilityChallenge(tamperedChallenge, binding, { now, ttlSeconds: 90 }), "invalid");
+if (previousChallengeSecret === undefined) delete process.env.ATTENDANCE_CHALLENGE_SECRET;
+else process.env.ATTENDANCE_CHALLENGE_SECRET = previousChallengeSecret;
+
+console.log("Server attendance verifier checks passed: consensus, geofence, timing grace, and signed compatibility challenges.");

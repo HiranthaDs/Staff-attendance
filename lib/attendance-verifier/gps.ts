@@ -48,7 +48,7 @@ export function distanceM(lat1Value: number, lng1Value: number, lat2Value: numbe
 }
 
 function agreementDistance(first: PositionSample, second: PositionSample) {
-  return Math.max(20, Math.min(80, Math.max(first.accuracy, second.accuracy) * 0.6));
+  return Math.max(30, Math.min(120, Math.max(first.accuracy, second.accuracy)));
 }
 
 function separation(first: PositionSample, second: PositionSample) {

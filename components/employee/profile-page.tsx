@@ -7,6 +7,7 @@ import { format, parseISO } from "date-fns";
 import { ArrowLeft, Banknote, BellOff, BellRing, Building2, CalendarDays, Check, ChevronRight, Clock3, Download, KeyRound, LogOut, Mail, MapPin, Phone, Save, ShieldCheck, Smartphone, UserRound } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { NotificationCenter } from "@/components/notifications/notification-center";
+import { ProfilePhotoEditor } from "@/components/profile/profile-photo-editor";
 import { createClient } from "@/lib/supabase/client";
 import { currentPushSubscription, disablePushNotifications, enablePushNotifications } from "@/lib/push-client";
 import type { PresenceInstallPrompt } from "@/components/pwa-register";
@@ -23,6 +24,7 @@ export function EmployeeProfilePage({ profile, attendance, leaves, salarySetting
   const [pushActive, setPushActive] = useState(false);
   const [pushConfigured, setPushConfigured] = useState(true);
   const [savingPreferences, setSavingPreferences] = useState(false);
+  const [avatarPath, setAvatarPath] = useState(profile.avatar_path ?? null);
   const [preferences, setPreferences] = useState<NotificationPreferences>({
     push_enabled: true,
     attendance_reminders: true,
@@ -132,7 +134,7 @@ export function EmployeeProfilePage({ profile, attendance, leaves, salarySetting
   return <main className="employee-shell ios-shell profile-page-shell">
     <header className="mobile-header ios-glass compact-app-header"><Link href="/app" className="header-back" aria-label="Back to attendance"><ArrowLeft size={19} /></Link><Brand /><NotificationCenter compact /></header>
     <div className="employee-content profile-content">
-      <section className="profile-hero"><span className="avatar profile-avatar">{initials(profile.full_name)}</span><div><span className="eyebrow">YOUR PROFILE</span><h1>{profile.full_name}</h1><p>{profile.job_title || "Team member"} · {profile.branch?.name || "No branch assigned"}</p></div><span className={`profile-status ${profile.active ? "" : "inactive"}`}><Check size={14} /> {profile.active ? "Active" : "Disabled"}</span></section>
+      <section className="profile-hero"><ProfilePhotoEditor compact profileId={profile.id} name={profile.full_name} avatarPath={avatarPath} onChanged={setAvatarPath} /><div><span className="eyebrow">YOUR PROFILE</span><h1>{profile.full_name}</h1><p>{profile.job_title || "Team member"} · {profile.branch?.name || "No branch assigned"}</p></div><span className={`profile-status ${profile.active ? "" : "inactive"}`}><Check size={14} /> {profile.active ? "Active" : "Disabled"}</span></section>
 
       <section className="profile-stat-grid"><article><Clock3 size={19} /><span><small>Total hours this year</small><strong>{formatMinutes(totals.workMinutes)}</strong></span></article><article><CalendarDays size={19} /><span><small>Annual leave remaining</small><strong>{Math.max(0, profile.annual_leave_days - totals.annualUsed)} days</strong></span></article></section>
 
@@ -165,7 +167,6 @@ export function EmployeeProfilePage({ profile, attendance, leaves, salarySetting
 }
 
 function ProfileRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <div>{icon}<span><small>{label}</small><strong>{value}</strong></span></div>; }
-function initials(name: string) { return name.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase(); }
 function formatMinutes(minutes: number) { return `${Math.floor(minutes / 60)}h ${minutes % 60}m`; }
 function formatMoney(value: number) { return `LKR ${Number(value || 0).toLocaleString("en-LK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function compactMoney(value: number) { return new Intl.NumberFormat("en-LK", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value || 0)); }

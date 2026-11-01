@@ -14,6 +14,17 @@ const schema = z.object({
   branch_id: z.string().uuid(),
   role: z.literal("staff").optional().default("staff"),
   job_title: z.string().trim().min(2).max(100),
+  department: z.string().trim().min(2).max(100),
+  employment_type: z.enum(["probation", "permanent", "contract", "temporary", "intern"]),
+  employment_start_date: z.string().date(),
+  probation_end_date: z.union([z.literal(""), z.string().date()]).default(""),
+  employment_end_date: z.union([z.literal(""), z.string().date()]).default(""),
+  date_of_birth: z.string().date(),
+  national_id: z.string().trim().min(4).max(50),
+  address: z.string().trim().min(5).max(500),
+  emergency_contact_name: z.string().trim().min(2).max(100),
+  emergency_contact_phone: z.string().trim().min(7).max(30),
+  emergency_contact_relationship: z.string().trim().min(2).max(60),
   temporary_password: z.string().min(10).max(128),
   expected_arrival: z.string().regex(/^\d{2}:\d{2}$/),
   expected_departure: z.string().regex(/^\d{2}:\d{2}$/),
@@ -29,6 +40,7 @@ export async function POST(request: Request) {
   if (!isTrustedMutationOrigin(request)) return NextResponse.json({ error: "This request did not come from the app." }, { status: 403 });
   const actor = await getApiAdmin();
   if ("error" in actor) return actor.error;
+  if (actor.profile.role !== "company_admin" || !actor.profile.organization_id) return NextResponse.json({ error: "Only a company owner can create staff accounts." }, { status: 403 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Check every staff detail and try again." }, { status: 400 });
   const input = parsed.data;
@@ -38,10 +50,13 @@ export async function POST(request: Request) {
   if (input.half_day_departure <= input.half_day_arrival) {
     return NextResponse.json({ error: "Half-day finishing time must be after its starting time." }, { status: 400 });
   }
+  if (input.date_of_birth > new Date().toISOString().slice(0, 10) || input.date_of_birth >= input.employment_start_date) return NextResponse.json({ error: "Date of birth must be before the employment start date." }, { status: 400 });
+  if (input.employment_type === "probation" && (!input.probation_end_date || input.probation_end_date < input.employment_start_date)) return NextResponse.json({ error: "Add a valid probation end date." }, { status: 400 });
+  if (["contract", "temporary", "intern"].includes(input.employment_type) && (!input.employment_end_date || input.employment_end_date < input.employment_start_date)) return NextResponse.json({ error: "Add a valid employment end date." }, { status: 400 });
   const { data: branch } = await actor.admin.from("branches").select("id").eq("id", input.branch_id).eq("active", true).maybeSingle();
   if (!branch) return NextResponse.json({ error: "Choose an active branch." }, { status: 400 });
 
-  const { data: created, error: authError } = await actor.admin.auth.admin.createUser({
+  const { data: created, error: authError } = await actor.serviceAdmin.auth.admin.createUser({
     email: input.email.toLowerCase(),
     password: input.temporary_password,
     email_confirm: true,
@@ -54,6 +69,7 @@ export async function POST(request: Request) {
 
   const { data: profile, error: profileError } = await actor.admin.from("profiles").insert({
     id: created.user.id,
+    organization_id: actor.profile.organization_id,
     full_name: input.full_name,
     email: input.email.toLowerCase(),
     phone: input.phone,
@@ -61,6 +77,17 @@ export async function POST(request: Request) {
     branch_id: input.branch_id,
     role: input.role,
     job_title: input.job_title,
+    department: input.department,
+    employment_type: input.employment_type,
+    employment_start_date: input.employment_start_date,
+    probation_end_date: input.probation_end_date || null,
+    employment_end_date: input.employment_end_date || null,
+    date_of_birth: input.date_of_birth,
+    national_id: input.national_id,
+    address: input.address,
+    emergency_contact_name: input.emergency_contact_name,
+    emergency_contact_phone: input.emergency_contact_phone,
+    emergency_contact_relationship: input.emergency_contact_relationship,
     expected_arrival: input.expected_arrival,
     expected_departure: input.expected_departure,
     monthly_leave_days: input.monthly_leave_days,
@@ -70,8 +97,8 @@ export async function POST(request: Request) {
   }).select("*, branch:branches(*)").single();
 
   if (profileError) {
-    await actor.admin.auth.admin.deleteUser(created.user.id);
-    return NextResponse.json({ error: profileError.code === "23505" ? "That employee code is already in use." : "The staff profile could not be saved." }, { status: 409 });
+    await actor.serviceAdmin.auth.admin.deleteUser(created.user.id);
+    return NextResponse.json({ error: profileError.code === "23505" ? "That employee code or national ID is already in use." : "The staff profile could not be saved." }, { status: 409 });
   }
   const scheduleRows = Array.from({ length: 7 }, (_, index) => {
     const weekday = index + 1;
@@ -88,7 +115,7 @@ export async function POST(request: Request) {
     .upsert(scheduleRows, { onConflict: "user_id,weekday" })
     .select("user_id,weekday,day_type,arrival_time,departure_time");
   if (scheduleError) {
-    await actor.admin.auth.admin.deleteUser(created.user.id);
+    await actor.serviceAdmin.auth.admin.deleteUser(created.user.id);
     return databaseMutationError(scheduleError, "The staff work schedule could not be saved.");
   }
   const email = await sendWelcomeEmail({

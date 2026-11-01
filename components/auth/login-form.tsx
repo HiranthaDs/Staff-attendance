@@ -5,15 +5,17 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
 
-export function LoginForm({ initialErrorCode = "", nextPath = "/", initialEmail = "" }: { initialErrorCode?: string; nextPath?: string; initialEmail?: string }) {
+export function LoginForm({ initialErrorCode = "", nextPath = "/", initialEmail = "", workspaceSlug = "", workspaceName = "" }: { initialErrorCode?: string; nextPath?: string; initialEmail?: string; workspaceSlug?: string; workspaceName?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const initialError = initialErrorCode === "account_disabled"
     ? "This account has been disabled."
+    : initialErrorCode === "company_suspended"
+      ? "This company workspace is suspended. Contact the platform administrator."
     : initialErrorCode === "session_expired"
-      ? "Your secure session was renewed. Sign in again to continue."
+      ? "Your session ended. Sign in again to continue."
       : "";
   const [error, setError] = useState(initialError);
   const [loading, setLoading] = useState(false);
@@ -26,7 +28,7 @@ export function LoginForm({ initialErrorCode = "", nextPath = "/", initialEmail 
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ email: email.trim(), password, workspace: workspaceSlug || undefined }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -48,9 +50,9 @@ export function LoginForm({ initialErrorCode = "", nextPath = "/", initialEmail 
   return (
     <div className="auth-form-wrap">
       <div className="auth-heading">
-        <span className="eyebrow">WELCOME BACK</span>
-        <h2>Sign in to your workspace</h2>
-        <p>Use the account provided by your administrator.</p>
+        <span className="eyebrow">{workspaceName ? `${workspaceName.toUpperCase()} PORTAL` : "WELCOME BACK"}</span>
+        <h2>{workspaceName ? `Sign in to ${workspaceName}` : "Sign in to your workspace"}</h2>
+        <p>{workspaceName ? "This secure link accepts accounts belonging to this company." : "Use the account provided by your administrator."}</p>
       </div>
       <form onSubmit={submit} className="stack-lg">
         <label className="field">

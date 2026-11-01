@@ -19,7 +19,7 @@ export type PayrollPreviewRow = {
 };
 
 export async function buildPayrollPreview(client: SupabaseClient, input: { start: string; end: string; branchId?: string | null; userId?: string }) {
-  let profilesQuery = client.from("profiles").select("*, branch:branches(*)").neq("role", "super_admin").order("full_name");
+  let profilesQuery = client.from("profiles").select("*, branch:branches(*)").in("role", ["branch_admin", "staff"]).order("full_name");
   if (input.branchId) profilesQuery = profilesQuery.eq("branch_id", input.branchId);
   if (input.userId) profilesQuery = profilesQuery.eq("id", input.userId);
   const profilesResult = await profilesQuery;

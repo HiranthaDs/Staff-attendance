@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { addDays, addMonths, eachDayOfInterval, format, isSameMonth, parseISO, startOfMonth } from "date-fns";
+import { addDays, addMonths, eachDayOfInterval, endOfMonth, format, isSameMonth, parseISO, startOfMonth } from "date-fns";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, MapPin, Moon, Palmtree, Plus, StickyNote, Sun, Trash2, X } from "lucide-react";
 import { dateRange, scheduleForDate } from "@/lib/workday";
 import type { AttendanceRecord, Branch, CalendarNote, CompanyHoliday, LeaveRequest, WorkScheduleDay } from "@/lib/types";
@@ -10,7 +10,7 @@ import type { AttendanceRecord, Branch, CalendarNote, CompanyHoliday, LeaveReque
 type CalendarItem =
   | { id: string; date: string; title: string; description: string | null; kind: "note"; branchName: string | null; note: CalendarNote }
   | { id: string; date: string; title: string; description: string | null; kind: "poya" | "public" | "company" | "special" | "pending_holiday"; branchName: string | null; holiday: CompanyHoliday }
-  | { id: string; date: string; title: string; description: string; kind: "leave" | "short_leave" | "timing" | "schedule_half" | "schedule_off"; branchName: null };
+  | { id: string; date: string; title: string; description: string; kind: "leave" | "short_leave" | "attendance" | "timing" | "schedule_half" | "schedule_off"; branchName: null };
 
 export function WorkCalendar({
   today,
@@ -23,6 +23,7 @@ export function WorkCalendar({
   attendance = [],
   leaves = [],
   workSchedule = [],
+  loadAttendanceHistory = false,
 }: {
   today: string;
   initialNotes: CalendarNote[];
@@ -34,6 +35,7 @@ export function WorkCalendar({
   attendance?: AttendanceRecord[];
   leaves?: LeaveRequest[];
   workSchedule?: WorkScheduleDay[];
+  loadAttendanceHistory?: boolean;
 }) {
   const router = useRouter();
   const todayDate = parseISO(`${today}T12:00:00`);
@@ -50,6 +52,44 @@ export function WorkCalendar({
   const [error, setError] = useState("");
   const [holidayStart, setHolidayStart] = useState(selectedDate);
   const [holidayEnd, setHolidayEnd] = useState(selectedDate);
+  const [historyAttendance, setHistoryAttendance] = useState<AttendanceRecord[]>([]);
+  const loadedAttendanceMonths = useRef(new Set<string>());
+
+  const attendanceRecords = useMemo(() => {
+    const byId = new Map([...attendance, ...historyAttendance].map((record) => [record.id, record]));
+    return [...byId.values()];
+  }, [attendance, historyAttendance]);
+
+  useEffect(() => {
+    if (!loadAttendanceHistory) return;
+    const month = format(visibleMonth, "yyyy-MM");
+    const loadedMonths = loadedAttendanceMonths.current;
+    if (loadedMonths.has(month)) return;
+    loadedMonths.add(month);
+    const controller = new AbortController();
+    let completed = false;
+    const start = format(startOfMonth(visibleMonth), "yyyy-MM-dd");
+    const end = format(endOfMonth(visibleMonth), "yyyy-MM-dd");
+    fetch(`/api/attendance/history?start=${start}&end=${end}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || "Attendance history could not be loaded.");
+        completed = true;
+        setHistoryAttendance((current) => {
+          const byId = new Map([...current, ...((result.attendance ?? []) as AttendanceRecord[])].map((record) => [record.id, record]));
+          return [...byId.values()];
+        });
+      })
+      .catch((reason) => {
+        if (reason instanceof DOMException && reason.name === "AbortError") return;
+        loadedMonths.delete(month);
+        setError(reason instanceof Error ? reason.message : "Attendance history could not be loaded.");
+      });
+    return () => {
+      controller.abort();
+      if (!completed) loadedMonths.delete(month);
+    };
+  }, [loadAttendanceHistory, visibleMonth]);
 
   const notes = useMemo(() => {
     const byId = new Map([...initialNotes, ...addedNotes, ...realtimeNotes].map((note) => [note.id, note]));
@@ -100,7 +140,13 @@ export function WorkCalendar({
       kind: leave.portion === "full_day" ? "leave" as const : "short_leave" as const,
       branchName: null,
     })));
-    const timingItems: CalendarItem[] = attendance.filter((record) => record.late_minutes > 0 || record.early_leave_minutes > 0).map((record) => {
+    const attendanceItems: CalendarItem[] = attendanceRecords.map((record) => {
+      const clockIn = record.clock_in ? format(parseISO(record.clock_in), "h:mm a") : "Not recorded";
+      const clockOut = record.clock_out ? format(parseISO(record.clock_out), "h:mm a") : "Open shift";
+      const timing = [record.late_minutes > 0 ? `${record.late_minutes} min late` : "On time", record.early_leave_minutes > 0 ? `${record.early_leave_minutes} min early departure` : ""].filter(Boolean).join(" · ");
+      return { id: `attendance-${record.id}`, date: record.attendance_date, title: record.status === "late" ? "Late attendance" : record.status === "partial" ? "Partial attendance" : "Present", description: `${clockIn} – ${clockOut} · ${timing}${record.work_minutes != null ? ` · ${Math.floor(record.work_minutes / 60)}h ${record.work_minutes % 60}m worked` : ""}`, kind: "attendance" as const, branchName: null };
+    });
+    const timingItems: CalendarItem[] = attendanceRecords.filter((record) => record.late_minutes > 0 || record.early_leave_minutes > 0).map((record) => {
       const timing = [record.late_minutes > 0 ? `${record.late_minutes} min late` : "", record.early_leave_minutes > 0 ? `${record.early_leave_minutes} min early departure` : ""].filter(Boolean);
       return { id: `timing-${record.id}`, date: record.attendance_date, title: timing.join(" · "), description: "Outside the branch's saved attendance tolerance.", kind: "timing", branchName: null };
     });
@@ -111,8 +157,8 @@ export function WorkCalendar({
       if (schedule.day_type === "off") return [{ id: `schedule-${date}`, date, title: "Weekly off day", description: "This is a scheduled off day, not a public holiday.", kind: "schedule_off" as const, branchName: null }];
       return [];
     }) : [];
-    return [...holidayItems, ...noteItems, ...leaveItems, ...timingItems, ...scheduleItems];
-  }, [attendance, calendarDays, holidays, leaves, notes, workSchedule]);
+    return [...holidayItems, ...noteItems, ...leaveItems, ...attendanceItems, ...timingItems, ...scheduleItems];
+  }, [attendanceRecords, calendarDays, holidays, leaves, notes, workSchedule]);
 
   const selectedItems = monthItems.filter((item) => item.date === selectedDate);
   const monthPrefix = format(visibleMonth, "yyyy-MM");
@@ -205,11 +251,11 @@ export function WorkCalendar({
             const hasHoliday = items.some((item) => ["public", "company", "special"].includes(item.kind));
             const hasPending = items.some((item) => item.kind === "pending_holiday");
             const hasNote = items.some((item) => item.kind === "note"); const hasLeave = items.some((item) => item.kind === "leave");
-            const hasShortLeave = items.some((item) => item.kind === "short_leave"); const hasTiming = items.some((item) => item.kind === "timing");
+            const hasShortLeave = items.some((item) => item.kind === "short_leave"); const hasAttendance = items.some((item) => item.kind === "attendance"); const hasTiming = items.some((item) => item.kind === "timing");
             const hasOff = items.some((item) => item.kind === "schedule_off");
-            return <button key={date} className={`${!isSameMonth(day, visibleMonth) ? "outside" : ""} ${date === today ? "today" : ""} ${date === selectedDate ? "selected" : ""} ${hasPoya ? "has-poya" : ""} ${hasHoliday ? "has-holiday" : ""} ${hasPending ? "has-pending-holiday" : ""} ${hasNote ? "has-note" : ""} ${hasLeave ? "has-leave" : ""} ${hasShortLeave ? "has-short-leave" : ""} ${hasTiming ? "has-timing" : ""} ${hasOff ? "has-off" : ""}`} onClick={() => setSelectedDate(date)} aria-label={`${format(day, "d MMMM yyyy")}${items.length ? `, ${items.map((item) => item.title).join(", ")}` : ""}`}><time>{format(day, "d")}</time><span className="calendar-cell-label">{items.find((item) => item.kind !== "schedule_off")?.title ?? items[0]?.title}</span><span className="calendar-dots" aria-hidden="true">{hasPoya && <i className="poya" />}{hasHoliday && <i className="holiday" />}{hasPending && <i className="pending-holiday" />}{hasNote && <i className="note" />}{hasLeave && <i className="leave" />}{hasShortLeave && <i className="short-leave" />}{hasTiming && <i className="timing" />}{hasOff && <i className="off" />}</span></button>;
+            return <button key={date} className={`${!isSameMonth(day, visibleMonth) ? "outside" : ""} ${date === today ? "today" : ""} ${date === selectedDate ? "selected" : ""} ${hasPoya ? "has-poya" : ""} ${hasHoliday ? "has-holiday" : ""} ${hasPending ? "has-pending-holiday" : ""} ${hasNote ? "has-note" : ""} ${hasLeave ? "has-leave" : ""} ${hasShortLeave ? "has-short-leave" : ""} ${hasAttendance ? "has-attendance" : ""} ${hasTiming ? "has-timing" : ""} ${hasOff ? "has-off" : ""}`} onClick={() => setSelectedDate(date)} aria-label={`${format(day, "d MMMM yyyy")}${items.length ? `, ${items.map((item) => item.title).join(", ")}` : ""}`}><time>{format(day, "d")}</time><span className="calendar-cell-label">{items.find((item) => item.kind !== "schedule_off")?.title ?? items[0]?.title}</span><span className="calendar-dots" aria-hidden="true">{hasPoya && <i className="poya" />}{hasHoliday && <i className="holiday" />}{hasPending && <i className="pending-holiday" />}{hasNote && <i className="note" />}{hasLeave && <i className="leave" />}{hasShortLeave && <i className="short-leave" />}{hasAttendance && <i className="attendance" />}{hasTiming && <i className="timing" />}{hasOff && <i className="off" />}</span></button>;
           })}</div>
-          <div className="calendar-legend"><span><i className="poya" /> Poya</span><span><i className="holiday" /> Approved holiday</span>{canManage && <span><i className="pending-holiday" /> Pending</span>}<span><i className="off" /> Weekly off</span><span><i className="leave" /> Leave</span><span><i className="note" /> Note</span><span><i className="today" /> Today</span></div>
+          <div className="calendar-legend"><span><i className="poya" /> Poya</span><span><i className="holiday" /> Approved holiday</span>{canManage && <span><i className="pending-holiday" /> Pending</span>}<span><i className="attendance" /> Attendance</span><span><i className="off" /> Weekly off</span><span><i className="leave" /> Leave</span><span><i className="note" /> Note</span><span><i className="today" /> Today</span></div>
         </div>
         <aside className="calendar-agenda"><div className="agenda-date"><span><CalendarDays size={20} /></span><div><small>SELECTED DATE</small><strong>{format(parseISO(`${selectedDate}T12:00:00`), "EEEE, d MMMM yyyy")}</strong></div></div><div className="agenda-list">{selectedItems.length ? selectedItems.map((item) => <article className={`agenda-item ${item.kind}`} key={item.id}><span>{item.kind === "poya" ? <Moon size={17} /> : ["public", "company", "special", "pending_holiday"].includes(item.kind) ? <Palmtree size={17} /> : item.kind === "note" ? <StickyNote size={17} /> : item.kind === "schedule_off" ? <Sun size={17} /> : <Clock3 size={17} />}</span><div><small>{itemLabel(item)}</small><strong>{item.title}</strong>{item.description && <p>{item.description}</p>}</div>{canManage && item.kind === "note" && <button onClick={() => deleteNote(item.note)} aria-label={`Delete ${item.title}`}><Trash2 size={16} /></button>}{canManage && item.kind === "pending_holiday" && <div className="holiday-review-actions"><button disabled={busyHoliday === item.holiday.id} onClick={() => void decideHoliday(item.holiday, "rejected")} aria-label="Reject holiday"><X size={15} /></button><button disabled={busyHoliday === item.holiday.id} onClick={() => void decideHoliday(item.holiday, "approved")} aria-label="Approve holiday"><Check size={15} /></button></div>}</article>) : <div className="agenda-empty"><CalendarDays size={24} /><strong>No events</strong><small>This date follows the normal saved work schedule.</small></div>}</div></aside>
       </div>
@@ -255,6 +301,7 @@ function itemLabel(item: CalendarItem) {
   if (item.kind === "note") return item.branchName?.toUpperCase() || "ALL BRANCHES";
   if (item.kind === "leave") return "APPROVED FULL-DAY LEAVE";
   if (item.kind === "short_leave") return "APPROVED HALF-DAY LEAVE";
+  if (item.kind === "attendance") return "VERIFIED ATTENDANCE";
   if (item.kind === "schedule_half") return "SCHEDULED HALF DAY";
   if (item.kind === "schedule_off") return "WEEKLY OFF DAY";
   return "ATTENDANCE TIMING";

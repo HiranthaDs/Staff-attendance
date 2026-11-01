@@ -17,10 +17,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (!isTrustedMutationOrigin(request)) return NextResponse.json({ error: "This request did not come from the app." }, { status: 403 });
   const actor = await getApiAdmin();
   if ("error" in actor) return actor.error;
+  if (actor.profile.role !== "company_admin") return NextResponse.json({ error: "Only a company owner can manage salary settings." }, { status: 403 });
   const userId = z.string().uuid().safeParse((await context.params).id);
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!userId.success || !parsed.success) return NextResponse.json({ error: "Check each salary setting." }, { status: 400 });
-  const { data: employee } = await actor.admin.from("profiles").select("id").eq("id", userId.data).neq("role", "super_admin").maybeSingle();
+  const { data: employee } = await actor.admin.from("profiles").select("id").eq("id", userId.data).in("role", ["branch_admin", "staff"]).maybeSingle();
   if (!employee) return NextResponse.json({ error: "The employee was not found." }, { status: 404 });
   try {
     const preferences = await loadPayrollPreferences(actor.admin);

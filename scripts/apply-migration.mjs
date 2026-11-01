@@ -30,12 +30,17 @@ try {
     migrationFiles.map(async (file) => ({ file, sql: await readFile(new URL(file, migrationDirectory), "utf8") })),
   );
   await client.connect();
-  await client.query("begin");
   for (const migration of migrations) {
     process.stdout.write(`Applying ${migration.file}...\n`);
-    await client.query(migration.sql);
+    await client.query("begin");
+    try {
+      await client.query(migration.sql);
+      await client.query("commit");
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    }
   }
-  await client.query("commit");
   process.stdout.write(`\n${migrations.length} migration(s) applied successfully.\n`);
 } catch (error) {
   await client.query("rollback").catch(() => undefined);

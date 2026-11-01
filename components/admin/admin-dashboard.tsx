@@ -48,11 +48,13 @@ import { BranchSetupView } from "@/components/admin/branch-setup-view";
 import { WorkCalendar } from "@/components/calendar/work-calendar";
 import { NotificationCenter } from "@/components/notifications/notification-center";
 import { PayrollView } from "@/components/admin/payroll-view";
+import { ProfileAvatar } from "@/components/profile/profile-avatar";
+import { ProfilePhotoEditor } from "@/components/profile/profile-photo-editor";
 import { captureBestBrowserLocation } from "@/lib/browser-location";
 import { createClient } from "@/lib/supabase/client";
 import { currentPushSubscription, enablePushNotifications } from "@/lib/push-client";
 import { approvedHolidayForDate, approvedLeaveForDate, defaultScheduleDay, scheduleForDate } from "@/lib/workday";
-import type { AttendanceRecord, Branch, BranchSetupInvite, BranchSetupSubmission, CalendarNote, CompanyHoliday, LeaveRequest, PayrollRecord, Profile, SalarySettings, SupportIssue, WorkScheduleDay, WorkdayType } from "@/lib/types";
+import type { AttendanceRecord, Branch, BranchSetupInvite, BranchSetupSubmission, CalendarNote, CompanyHoliday, EmploymentType, LeaveRequest, PayrollRecord, Profile, SalarySettings, SupportIssue, WorkScheduleDay, WorkdayType } from "@/lib/types";
 
 type Tab = "overview" | "branches" | "staff" | "attendance" | "leave" | "payroll" | "calendar" | "setup" | "settings";
 
@@ -84,11 +86,11 @@ export function AdminDashboard({ admin, today, initialBranches, initialStaff, at
   function openStaffModal(branchId?: string) { setStaffModalBranchId(branchId); setStaffModal(true); }
   const filteredStaff = staff.filter((person) => `${person.full_name} ${person.email} ${person.employee_code}`.toLowerCase().includes(search.toLowerCase()));
 
-  const isSuperAdmin = admin.role === "super_admin";
+  const isSuperAdmin = admin.role === "company_admin";
   return <main className="admin-shell">
     <aside className={`admin-sidebar ${sidebarOpen ? "open" : ""}`}>
       <div className="sidebar-brand"><Brand light /><button className="sidebar-close" onClick={() => setSidebarOpen(false)}><X size={20} /></button></div>
-      <div className="workspace-chip"><span className="workspace-logo">H</span><div><small>WORKSPACE</small><strong>Head Office</strong></div><ChevronDown size={16} /></div>
+      <div className="workspace-chip"><span className="workspace-logo">{(admin.organization?.name || "W").slice(0, 1).toUpperCase()}</span><div><small>WORKSPACE</small><strong>{admin.organization?.name || "Company workspace"}</strong></div><ChevronDown size={16} /></div>
       <nav className="side-nav">
         <NavButton active={tab === "overview"} icon={<LayoutDashboard />} label="Overview" onClick={() => navigate("overview")} />
         <NavButton active={tab === "branches"} icon={<Building2 />} label="Branches" count={branches.length} onClick={() => navigate("branches")} />
@@ -100,7 +102,7 @@ export function AdminDashboard({ admin, today, initialBranches, initialStaff, at
         {isSuperAdmin && <NavButton active={tab === "setup"} icon={<Link2 />} label="Branch setup" count={initialSetupSubmissions.filter((item) => !item.created_branch_id).length || undefined} onClick={() => navigate("setup")} />}
       </nav>
       <div className="side-nav secondary"><button className={tab === "settings" ? "active" : ""} onClick={() => navigate("settings")}><Settings size={19} /><span>Settings</span></button><button onClick={() => navigate("settings")}><HelpCircle size={19} /><span>Help & setup</span></button></div>
-      <div className="sidebar-user"><span className="avatar avatar-sm">{initials(admin.full_name)}</span><div><strong>{admin.full_name}</strong><small>{isSuperAdmin ? "Super administrator" : "Branch administrator"}</small></div><button onClick={logout}><LogOut size={17} /></button></div>
+      <div className="sidebar-user"><ProfileAvatar id={admin.id} name={admin.full_name} avatarPath={admin.avatar_path} className="avatar-sm" /><div><strong>{admin.full_name}</strong><small>{isSuperAdmin ? "Company owner" : "Branch administrator"}</small></div><button onClick={logout}><LogOut size={17} /></button></div>
     </aside>
     {sidebarOpen && <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
 
@@ -108,7 +110,7 @@ export function AdminDashboard({ admin, today, initialBranches, initialStaff, at
       <header className="admin-topbar">
         <button className="menu-button" onClick={() => setSidebarOpen(true)}><Menu size={22} /></button>
         <div className="admin-search"><Search size={18} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search people, branches or records…" /></div>
-        <div className="topbar-actions"><NotificationCenter /><span className="topbar-divider" /><div className="topbar-user"><span className="avatar avatar-sm">{initials(admin.full_name)}</span><div><strong>{admin.full_name}</strong><small>{isSuperAdmin ? "Super admin" : "Branch admin"}</small></div></div></div>
+        <div className="topbar-actions"><NotificationCenter /><span className="topbar-divider" /><div className="topbar-user"><ProfileAvatar id={admin.id} name={admin.full_name} avatarPath={admin.avatar_path} className="avatar-sm" /><div><strong>{admin.full_name}</strong><small>{isSuperAdmin ? "Company owner" : "Branch admin"}</small></div></div></div>
       </header>
 
       <div className="admin-content">
@@ -120,18 +122,26 @@ export function AdminDashboard({ admin, today, initialBranches, initialStaff, at
         {tab === "payroll" && <PayrollView branches={branches} today={today} />}
         {tab === "calendar" && <><div className="page-heading"><div><span className="eyebrow">TEAM SCHEDULE</span><h1>Calendar</h1><p>Approve holiday suggestions and publish auditable workday changes.</p></div></div><WorkCalendar today={today} initialNotes={initialCalendarNotes} initialHolidays={initialHolidays} canManage branches={branches} title="Company calendar" /></>}
         {tab === "setup" && isSuperAdmin && <BranchSetupView initialInvites={initialSetupInvites} initialSubmissions={initialSetupSubmissions} onBranchCreated={(branch) => setBranches((current) => current.some((item) => item.id === branch.id) ? current : [...current, branch])} />}
-        {tab === "settings" && <SettingsView branches={branches} today={today} />}
+        {tab === "settings" && <SettingsView admin={admin} branches={branches} today={today} />}
       </div>
     </section>
 
     {branchModal && isSuperAdmin && <BranchModal onClose={() => setBranchModal(false)} onCreated={(branch) => { setBranches((current) => [...current, branch]); setBranchModal(false); }} />}
-    {staffModal && <StaffModal branches={branches} defaultBranchId={staffModalBranchId} onClose={() => setStaffModal(false)} onCreated={(person) => setStaff((current) => current.some((item) => item.id === person.id) ? current : [...current, person])} />}
+    {staffModal && <StaffModal branches={branches} defaultBranchId={staffModalBranchId} canInviteManager={isSuperAdmin} onClose={() => setStaffModal(false)} />}
     {leaveModalUserId !== null && <AdminLeaveModal staff={staff} defaultUserId={leaveModalUserId || undefined} onClose={() => setLeaveModalUserId(null)} onCreated={(leave) => { setLeaves((current) => [leave, ...current]); setLeaveModalUserId(null); }} />}
   </main>;
 }
 
 function Overview({ admin, branches, staff, expectedStaff, today, todaysAttendance, pendingLeaves, attendanceRate, onAddStaff, onAddBranch, onNavigate, canManageBranches }: { admin: Profile; branches: Branch[]; staff: Profile[]; expectedStaff: Profile[]; today: string; todaysAttendance: AttendanceRecord[]; pendingLeaves: LeaveRequest[]; attendanceRate: number; onAddStaff: () => void; onAddBranch: () => void; onNavigate: (tab: Tab) => void; canManageBranches: boolean }) {
   const late = todaysAttendance.filter((row) => row.status === "late").length;
+  const lateRows = todaysAttendance.filter((row) => row.late_minutes > 0).sort((a, b) => b.late_minutes - a.late_minutes);
+  const markedIds = new Set(todaysAttendance.map((row) => row.user_id));
+  const unmarked = expectedStaff.filter((person) => !markedIds.has(person.id));
+  const employmentAlerts = staff.flatMap((person) => [
+    person.employment_type === "probation" && person.probation_end_date ? { person, date: person.probation_end_date, label: "Probation review" } : null,
+    person.employment_end_date ? { person, date: person.employment_end_date, label: "Employment end" } : null,
+  ]).filter((item): item is { person: Profile; date: string; label: string } => item !== null && daysBetween(today, item.date) >= 0 && daysBetween(today, item.date) <= 60).sort((a, b) => a.date.localeCompare(b.date));
+  const incompleteProfiles = staff.filter((person) => !person.avatar_path || !person.department || !person.national_id || !person.emergency_contact_phone);
   return <>
     <div className="page-heading"><div><span className="eyebrow">{format(parseISO(today), "EEEE, d MMMM yyyy")}</span><h1>Good {new Date().getHours() < 12 ? "morning" : "afternoon"}, {admin.full_name.split(" ")[0]}.</h1><p>Here’s what’s happening across your offices today.</p></div><div className="heading-actions"><button className="button button-ghost" onClick={() => onNavigate("attendance")}><Download size={17} /> Export</button><button className="button button-primary" onClick={onAddStaff}><Plus size={17} /> Add staff</button></div></div>
     <div className="stats-grid">
@@ -144,6 +154,11 @@ function Overview({ admin, branches, staff, expectedStaff, today, todaysAttendan
       <section className="panel attendance-panel"><PanelHead eyebrow="LIVE TODAY" title="Attendance board" action="View all" onClick={() => onNavigate("attendance")} /><div className="attendance-overview"><div className="donut" style={{ "--percent": `${attendanceRate * 3.6}deg` } as React.CSSProperties}><div><strong>{attendanceRate}%</strong><small>present</small></div></div><div className="legend"><span><i className="green" />Present<strong>{todaysAttendance.length}</strong></span><span><i className="amber" />Late<strong>{late}</strong></span><span><i className="slate" />Not marked<strong>{Math.max(0, expectedStaff.length - todaysAttendance.length)}</strong></span></div></div><div className="mini-people">{todaysAttendance.slice(0, 5).map((row) => <div key={row.id}><span className="avatar avatar-sm">{initials(row.profile?.full_name || "Staff")}</span><div><strong>{row.profile?.full_name}</strong><small>{row.branch?.name}</small></div><time>{row.clock_in ? format(parseISO(row.clock_in), "h:mm a") : "—"}</time><span className={`status-badge ${row.status}`}>{row.status}</span></div>)}{!todaysAttendance.length && <div className="inline-empty">No one has clocked in yet today.</div>}</div></section>
       <section className="panel"><PanelHead eyebrow="BRANCHES" title="Office pulse" action="Manage" onClick={() => onNavigate("branches")} /><div className="branch-pulse">{branches.slice(0, 4).map((branch) => { const count = todaysAttendance.filter((r) => r.branch_id === branch.id).length; const total = staff.filter((p) => p.branch_id === branch.id).length; return <div key={branch.id}><span className="branch-letter">{branch.code.slice(0, 2)}</span><div><strong>{branch.name}</strong><small>{count} of {total} present</small></div><div className="mini-progress"><span style={{ width: `${total ? count / total * 100 : 0}%` }} /></div><strong>{total ? Math.round(count / total * 100) : 0}%</strong></div>; })}</div>{canManageBranches && <button className="dashed-button" onClick={onAddBranch}><Plus size={17} /> Add another branch</button>}</section>
     </div>
+    <section className="today-exceptions-grid" aria-label="Today attendance exceptions">
+      <div className="panel today-exception-panel"><PanelHead eyebrow="TODAY · LATE ATTENDANCE" title={`${lateRows.length} late arrival${lateRows.length === 1 ? "" : "s"}`} action="Attendance" onClick={() => onNavigate("attendance")} /><div className="today-exception-list">{lateRows.length ? lateRows.slice(0, 8).map((row) => <article key={row.id}><span className="avatar avatar-sm">{initials(row.profile?.full_name || "Staff")}</span><div><strong>{row.profile?.full_name || "Staff member"}</strong><small>{row.branch?.name || "Branch"} · clocked in {row.clock_in ? format(parseISO(row.clock_in), "h:mm a") : "—"}</small></div><b>{row.late_minutes}m late</b></article>) : <div className="inline-empty"><CheckCircle2 size={18} /> No late arrivals today.</div>}</div></div>
+      <div className="panel today-exception-panel"><PanelHead eyebrow="TODAY · NOT MARKED" title={`${unmarked.length} expected`} action="People" onClick={() => onNavigate("staff")} /><div className="today-exception-list">{unmarked.length ? unmarked.slice(0, 8).map((person) => <article key={person.id}><span className="avatar avatar-sm">{initials(person.full_name)}</span><div><strong>{person.full_name}</strong><small>{person.branch?.name || "Branch"} · {person.expected_arrival.slice(0, 5)} scheduled</small></div><span className="status-badge pending">Not marked</span></article>) : <div className="inline-empty"><CheckCircle2 size={18} /> Everyone scheduled has marked attendance.</div>}</div></div>
+    </section>
+    <section className="panel workforce-followups"><div className="platform-section-head"><div><span className="eyebrow">WORKFORCE FOLLOW-UPS</span><h2>Employment and profile readiness</h2><p>Proactive reminders before important staff records need attention.</p></div><button className="button button-ghost button-sm" onClick={() => onNavigate("staff")}>Open people</button></div><div className="workforce-followup-grid"><article><div><CalendarRange size={19} /><span><strong>{employmentAlerts.length} upcoming milestone{employmentAlerts.length === 1 ? "" : "s"}</strong><small>Probation or fixed-term dates in the next 60 days</small></span></div>{employmentAlerts.slice(0, 4).map((item) => <p key={`${item.person.id}-${item.label}`}><span>{item.person.full_name}<small>{item.label}</small></span><b>{format(parseISO(item.date), "d MMM yyyy")}</b></p>)}{!employmentAlerts.length && <p className="followup-clear"><CheckCircle2 size={17} /> No employment dates need action.</p>}</article><article><div><ShieldCheck size={19} /><span><strong>{incompleteProfiles.length} incomplete profile{incompleteProfiles.length === 1 ? "" : "s"}</strong><small>Photo, department, identity or emergency detail missing</small></span></div>{incompleteProfiles.slice(0, 4).map((person) => <p key={person.id}><span>{person.full_name}<small>{!person.avatar_path ? "Photo missing" : !person.department ? "Department missing" : !person.national_id ? "Identity missing" : "Emergency contact missing"}</small></span><b>{profileCompletion(person)}%</b></p>)}{!incompleteProfiles.length && <p className="followup-clear"><CheckCircle2 size={17} /> Every active profile is complete.</p>}</article></div></section>
     <section className="panel quick-panel"><div><span className="eyebrow">QUICK SETUP</span><h2>Keep your workspace growing</h2><p>Add branches, invite team members and let Presence handle the rest.</p></div><div className="quick-actions">{canManageBranches && <button onClick={onAddBranch}><span><Building2 size={20} /></span><div><strong>New branch</strong><small>Set a secure office zone</small></div></button>}<button onClick={onAddStaff}><span><Users size={20} /></span><div><strong>Invite staff</strong><small>Create a team account</small></div></button></div></section>
   </>;
 }
@@ -172,7 +187,7 @@ function BranchDetailModal({ branch, staff, canEdit, onUpdated, onClose, onAddSt
     </div>
     {canEdit && <BranchPolicyEditor branch={branch} onUpdated={onUpdated} />}
     <section className="branch-detail-team"><div className="branch-detail-section-head"><div><span className="eyebrow">BRANCH TEAM</span><h3>People at this office</h3></div><button className="button button-primary" onClick={onAddStaff}><Plus size={16} /> Add staff here</button></div>
-      <div className="branch-detail-people">{staff.length ? staff.map((person) => <div key={person.id}><span className="avatar avatar-sm">{initials(person.full_name)}</span><div><strong>{person.full_name}</strong><small>{person.job_title || "Team member"} · {person.employee_code || person.email}</small></div><span className={person.active ? "person-active" : "person-active inactive"}>{person.active ? "Active" : "Disabled"}</span></div>) : <div className="empty-state"><span><Users size={24} /></span><strong>No staff assigned yet</strong><small>Add the first team member directly from this branch.</small></div>}</div>
+      <div className="branch-detail-people">{staff.length ? staff.map((person) => <div key={person.id}><ProfileAvatar id={person.id} name={person.full_name} avatarPath={person.avatar_path} className="avatar-sm" /><div><strong>{person.full_name}</strong><small>{person.job_title || "Team member"} · {person.employee_code || person.email}</small></div><span className={person.active ? "person-active" : "person-active inactive"}>{person.active ? "Active" : "Disabled"}</span></div>) : <div className="empty-state"><span><Users size={24} /></span><strong>No staff assigned yet</strong><small>Add the first team member directly from this branch.</small></div>}</div>
     </section>
   </div></div>;
 }
@@ -255,8 +270,8 @@ function StaffView({ staff, branches, today, calendarNotes, holidays, onAdd, onR
       <div className="data-table">
         <div className="table-row table-head"><span>Person</span><span>Branch</span><span>Role</span><span>Work hours</span><span>Leave</span><span>Status</span></div>
         {staff.map((person) => <button className="table-row staff-row-button" key={person.id} onClick={() => setSelected(person)}>
-          <span className="person-cell"><span className="avatar">{initials(person.full_name)}</span><span><strong>{person.full_name}</strong><small>{person.email || person.employee_code}</small></span></span>
-          <span>{person.branch?.name || "—"}</span><span>{person.job_title || roleTitle(person.role)}</span><span>{person.expected_arrival.slice(0, 5)} – {person.expected_departure.slice(0, 5)}</span><span>{person.annual_leave_days} annual</span><span><i className={`account-dot ${person.active ? "" : "inactive"}`} />{person.active ? "Active" : "Disabled"}</span>
+          <span className="person-cell"><ProfileAvatar id={person.id} name={person.full_name} avatarPath={person.avatar_path} /><span><strong>{person.full_name}</strong><small>{person.email || person.employee_code}</small></span></span>
+          <span>{person.branch?.name || "—"}</span><span><strong>{person.job_title || roleTitle(person.role)}</strong><small>{employmentTypeLabel(person.employment_type)}</small></span><span>{person.expected_arrival.slice(0, 5)} – {person.expected_departure.slice(0, 5)}</span><span>{person.annual_leave_days} annual</span><span><i className={`account-dot ${person.active ? "" : "inactive"}`} />{person.active ? "Active" : "Disabled"}</span>
         </button>)}
       </div>
     </div>
@@ -290,11 +305,11 @@ function EmployeeDetailModal({ employee, branches, today, calendarNotes, initial
   const timingFlags = rows.filter((row) => row.late_minutes > 0 || row.early_leave_minutes > 0).length;
 
   return <><div className="modal-backdrop employee-detail-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="modal modal-wide employee-detail-modal" role="dialog" aria-modal="true" aria-labelledby="employee-detail-title">
-    <div className="modal-head employee-profile-head"><div className="employee-profile-identity"><span className="avatar employee-avatar">{initials(profile.full_name)}</span><div><span className="eyebrow">EMPLOYEE PROFILE</span><h2 id="employee-detail-title">{profile.full_name}</h2><p>{profile.job_title || roleTitle(profile.role)} · {profile.branch?.name || "No branch assigned"}</p></div></div><div className="heading-actions">{canManageSchedule && <button className="button button-ghost" onClick={() => setEditOpen(true)}><Pencil size={16} /> Edit employee</button>}<button className="button button-ghost" onClick={() => setResetOpen(true)}><KeyRound size={16} /> Reset password</button><button className="button button-primary" onClick={onRecordLeave}><CalendarPlus size={16} /> Record leave</button><button className="icon-button bordered" onClick={onClose} aria-label="Close"><X size={20} /></button></div></div>
+    <div className="modal-head employee-profile-head"><div className="employee-profile-identity"><ProfilePhotoEditor compact profileId={profile.id} name={profile.full_name} avatarPath={profile.avatar_path} onChanged={(avatarPath) => { const updated = { ...profile, avatar_path: avatarPath }; setDetail((current) => current ? { ...current, profile: updated } : current); onUpdated(updated); }} /><div><span className="eyebrow">EMPLOYEE PROFILE</span><h2 id="employee-detail-title">{profile.full_name}</h2><p>{profile.job_title || roleTitle(profile.role)} · {profile.branch?.name || "No branch assigned"}</p></div></div><div className="heading-actions">{canManageSchedule && <button className="button button-ghost" onClick={() => setEditOpen(true)}><Pencil size={16} /> Edit employee</button>}<button className="button button-ghost" onClick={() => setResetOpen(true)}><KeyRound size={16} /> Reset password</button><button className="button button-primary" onClick={onRecordLeave}><CalendarPlus size={16} /> Record leave</button><button className="icon-button bordered" onClick={onClose} aria-label="Close"><X size={20} /></button></div></div>
     {error && <div className="form-alert error">{error}</div>}
     {!detail && !error ? <div className="detail-loading"><LoaderCircle className="spin" size={25} /> Loading employee details…</div> : <>
       <div className="employee-profile-grid">
-        <section className="employee-contact-card"><span className="eyebrow">DETAILS</span><div><Mail size={17} /><span><small>Email</small><strong>{profile.email || "Not provided"}</strong></span></div><div><Phone size={17} /><span><small>Phone</small><strong>{profile.phone || "Not provided"}</strong></span></div><div><Building2 size={17} /><span><small>Employee code</small><strong>{profile.employee_code || "Not assigned"}</strong></span></div>{canManageSchedule ? <button className="employee-schedule-row" onClick={() => setScheduleOpen(true)}><Clock3 size={17} /><span><small>Work schedule</small><strong>{scheduleSummary(profile.work_schedule ?? [])}</strong></span><ChevronRight size={16} /></button> : <div><Clock3 size={17} /><span><small>Work schedule</small><strong>{scheduleSummary(profile.work_schedule ?? [])}</strong></span></div>}<button className="employee-salary-row" onClick={() => setSalaryOpen(true)}><Banknote size={17} /><span><small>Salary settings</small><strong>{detail?.salary_settings ? `LKR ${Number(detail.salary_settings.basic_salary).toLocaleString("en-LK")} · ${detail.salary_settings.pay_cycle === "calendar_month" ? "monthly" : detail.salary_settings.pay_cycle === "fifteenth_cycle" ? "15th cycle" : "custom cycle"}` : "Add salary details"}</strong></span><ChevronRight size={16} /></button></section>
+        <section className="employee-contact-card"><span className="eyebrow">DETAILS</span><div><Mail size={17} /><span><small>Email</small><strong>{profile.email || "Not provided"}</strong></span></div><div><Phone size={17} /><span><small>Phone</small><strong>{profile.phone || "Not provided"}</strong></span></div><div><Building2 size={17} /><span><small>Employee code</small><strong>{profile.employee_code || "Not assigned"}</strong></span></div><div><ShieldCheck size={17} /><span><small>Employment</small><strong>{employmentTypeLabel(profile.employment_type)}{profile.department ? ` · ${profile.department}` : ""}</strong></span></div><div><CalendarDays size={17} /><span><small>Employment dates</small><strong>{profile.employment_start_date || "Not recorded"}{profile.probation_end_date ? ` · probation to ${profile.probation_end_date}` : profile.employment_end_date ? ` · ends ${profile.employment_end_date}` : ""}</strong></span></div><div><KeyRound size={17} /><span><small>National ID / passport</small><strong>{profile.national_id || "Not recorded"}</strong></span></div><div><MapPin size={17} /><span><small>Address</small><strong>{profile.address || "Not recorded"}</strong></span></div><div><LifeBuoy size={17} /><span><small>Emergency contact</small><strong>{profile.emergency_contact_name ? `${profile.emergency_contact_name} · ${profile.emergency_contact_relationship || "contact"} · ${profile.emergency_contact_phone || "no phone"}` : "Not recorded"}</strong></span></div>{canManageSchedule ? <button className="employee-schedule-row" onClick={() => setScheduleOpen(true)}><Clock3 size={17} /><span><small>Work schedule</small><strong>{scheduleSummary(profile.work_schedule ?? [])}</strong></span><ChevronRight size={16} /></button> : <div><Clock3 size={17} /><span><small>Work schedule</small><strong>{scheduleSummary(profile.work_schedule ?? [])}</strong></span></div>}<button className="employee-salary-row" onClick={() => setSalaryOpen(true)}><Banknote size={17} /><span><small>Salary settings</small><strong>{detail?.salary_settings ? `LKR ${Number(detail.salary_settings.basic_salary).toLocaleString("en-LK")} · ${detail.salary_settings.pay_cycle === "calendar_month" ? "monthly" : detail.salary_settings.pay_cycle === "fifteenth_cycle" ? "15th cycle" : "custom cycle"}` : "Add salary details"}</strong></span><ChevronRight size={16} /></button></section>
         <div className="employee-summary-grid"><StatCard label="Total hours" value={formatWorkMinutes(totalMinutes)} detail={`${rows.length} recorded workday${rows.length === 1 ? "" : "s"} this year`} icon={<Clock3 />} tone="navy" /><StatCard label="Approved leave" value={`${leaveDays}`} detail={`${profile.annual_leave_days} annual days allocated`} icon={<CalendarCheck />} tone="violet" /><StatCard label="Timing flags" value={`${timingFlags}`} detail="Late arrivals or early departures" icon={<Gauge />} tone="amber" /></div>
       </div>
       <WorkCalendar today={today} initialNotes={calendarNotes} initialHolidays={detail?.holidays ?? initialHolidays} attendance={rows} leaves={leaves} workSchedule={(profile.work_schedule ?? []) as WorkScheduleDay[]} title={`${profile.full_name}'s calendar`} />
@@ -305,6 +320,7 @@ function EmployeeDetailModal({ employee, branches, today, calendarNotes, initial
 
 function EditStaffModal({ employee, branches, onClose, onSaved }: { employee: Profile; branches: Branch[]; onClose: () => void; onSaved: (profile: Profile) => void }) {
   const [active, setActive] = useState(employee.active);
+  const [employmentType, setEmploymentType] = useState<EmploymentType>(employee.employment_type || "permanent");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -322,6 +338,18 @@ function EditStaffModal({ employee, branches, onClose, onSaved }: { employee: Pr
     <label className="field"><span>Employee code</span><input name="employee_code" defaultValue={employee.employee_code || ""} maxLength={30} /></label>
     <label className="field"><span>Branch</span><select name="branch_id" defaultValue={employee.branch_id || ""} required><option value="" disabled>Select a branch</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
     <label className="field"><span>Job title</span><input name="job_title" defaultValue={employee.job_title || ""} required minLength={2} maxLength={100} /></label>
+    <label className="field"><span>Department / team</span><input name="department" defaultValue={employee.department || ""} required minLength={2} maxLength={100} /></label>
+    <label className="field"><span>Employment status</span><select name="employment_type" value={employmentType} onChange={(event) => setEmploymentType(event.target.value as EmploymentType)}><option value="probation">Probation</option><option value="permanent">Permanent</option><option value="contract">Fixed-term contract</option><option value="temporary">Temporary</option><option value="intern">Intern / trainee</option></select></label>
+    <label className="field"><span>Employment start date</span><input name="employment_start_date" type="date" required defaultValue={employee.employment_start_date || todayInColombo()} /></label>
+    {employmentType === "probation" && <label className="field"><span>Probation end date</span><input name="probation_end_date" type="date" required defaultValue={employee.probation_end_date || ""} /></label>}
+    {["contract", "temporary", "intern"].includes(employmentType) && <label className="field"><span>Employment end date</span><input name="employment_end_date" type="date" required defaultValue={employee.employment_end_date || ""} /></label>}
+    <label className="field"><span>Date of birth</span><input name="date_of_birth" type="date" required max={todayInColombo()} defaultValue={employee.date_of_birth || ""} /></label>
+    <label className="field"><span>National ID / passport</span><input name="national_id" required minLength={4} maxLength={50} defaultValue={employee.national_id || ""} autoComplete="off" /></label>
+    <label className="field field-span"><span>Residential address</span><textarea name="address" required minLength={5} maxLength={500} defaultValue={employee.address || ""} /></label>
+    <div className="form-section-label field-span"><strong>Emergency contact</strong><small>Keep this information current for staff safety.</small></div>
+    <label className="field"><span>Contact name</span><input name="emergency_contact_name" required minLength={2} maxLength={100} defaultValue={employee.emergency_contact_name || ""} /></label>
+    <label className="field"><span>Relationship</span><input name="emergency_contact_relationship" required minLength={2} maxLength={60} defaultValue={employee.emergency_contact_relationship || ""} /></label>
+    <label className="field"><span>Emergency phone</span><input name="emergency_contact_phone" type="tel" required minLength={7} maxLength={30} defaultValue={employee.emergency_contact_phone || ""} /></label>
     <label className="field"><span>Monthly leave days</span><input name="monthly_leave_days" type="number" min="0" max="10" step="0.5" defaultValue={employee.monthly_leave_days} required /></label>
     <label className="field"><span>Annual leave days</span><input name="annual_leave_days" type="number" min="0" max="60" step="0.5" defaultValue={employee.annual_leave_days} required /></label>
     <label className="staff-active-toggle field-span"><input type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} /><span><strong>Active employee account</strong><small>Disabled employees cannot sign in or mark attendance.</small></span></label>
@@ -490,16 +518,11 @@ function BranchModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   </div></div>;
 }
 
-function StaffModal({ branches, defaultBranchId, onClose, onCreated }: { branches: Branch[]; defaultBranchId?: string; onClose: () => void; onCreated: (profile: Profile) => void }) {
+function StaffModal({ branches, defaultBranchId, canInviteManager, onClose }: { branches: Branch[]; defaultBranchId?: string; canInviteManager: boolean; onClose: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [temporaryPassword, setTemporaryPassword] = useState("");
-  const [receipt, setReceipt] = useState<CredentialReceipt | null>(null);
-
-  function generatePassword() {
-    const value = `Welcome!${crypto.getRandomValues(new Uint32Array(1))[0].toString(36).slice(0, 7)}A9`;
-    setTemporaryPassword(value);
-  }
+  const [employmentType, setEmploymentType] = useState<EmploymentType>("probation");
+  const [receipt, setReceipt] = useState<{ fullName: string; email: string; link: string; loginLink: string; companyName: string; emailSent: boolean; emailError?: string } | null>(null);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -507,37 +530,48 @@ function StaffModal({ branches, defaultBranchId, onClose, onCreated }: { branche
     setError("");
     try {
       const values = Object.fromEntries(new FormData(event.currentTarget));
-      const response = await fetch("/api/admin/staff", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(values) });
+      const response = await fetch("/api/admin/invitations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(values) });
       const json = await response.json().catch(() => ({}));
-      if (!response.ok) { setError(json.error || "The account could not be created."); return; }
-      onCreated(json.profile);
+      if (!response.ok) { setError(json.error || "The invitation could not be created."); return; }
       setReceipt({
         fullName: String(values.full_name),
         email: String(values.email),
-        temporaryPassword: String(values.temporary_password),
+        link: String(json.link),
+        loginLink: String(json.loginLink),
+        companyName: String(json.companyName || "your company"),
         emailSent: Boolean(json.email?.sent),
-        emailConfigured: Boolean(json.email?.configured),
         emailError: json.email?.error,
       });
     } catch {
-      setError("The account service could not be reached. Check the connection and try again.");
+      setError("The invitation service could not be reached. Check the connection and try again.");
     } finally {
       setLoading(false);
     }
   }
 
-  if (receipt) return <CredentialReceiptModal title="Staff account created" receipt={receipt} onClose={onClose} />;
+  if (receipt) return <InvitationReceiptModal receipt={receipt} onClose={onClose} />;
   return <div className="modal-backdrop"><div className="modal modal-wide">
-    <div className="modal-head"><div><span className="eyebrow">NEW TEAM MEMBER</span><h2>Create a staff account</h2><p>The employee must replace the temporary password on first sign in.</p></div><button className="icon-button bordered" onClick={onClose}><X size={20} /></button></div>
+    <div className="modal-head"><div><span className="eyebrow">NEW TEAM MEMBER</span><h2>Invite a staff member</h2><p>Presence creates a private one-time link. The employee chooses their own password.</p></div><button className="icon-button bordered" onClick={onClose}><X size={20} /></button></div>
     <form onSubmit={submit} className="form-grid staff-form">
-      <input type="hidden" name="role" value="staff" />
       <label className="field"><span>Full name</span><input name="full_name" required placeholder="Nimali Perera" /></label>
       <label className="field"><span>Phone number</span><input name="phone" required placeholder="+94 77 123 4567" /></label>
       <label className="field"><span>Email address</span><input name="email" type="email" required placeholder="nimali@company.com" /></label>
       <label className="field"><span>Employee code</span><input name="employee_code" placeholder="EMP-024" /></label>
       <label className="field"><span>Branch</span><select name="branch_id" required defaultValue={defaultBranchId || ""}><option value="" disabled>Select a branch</option>{branches.map((branch) => <option value={branch.id} key={branch.id}>{branch.name}</option>)}</select></label>
       <label className="field"><span>Job title</span><input name="job_title" required placeholder="Operations executive" /></label>
-      <label className="field"><span>Temporary password</span><div className="inline-input"><input name="temporary_password" required minLength={10} value={temporaryPassword} onChange={(event) => setTemporaryPassword(event.target.value)} placeholder="At least 10 characters" /><button type="button" onClick={generatePassword}>Generate</button></div></label>
+      <label className="field"><span>Department / team</span><input name="department" required minLength={2} maxLength={100} placeholder="Operations" /></label>
+      <label className="field"><span>Account access</span><select name="role" defaultValue="staff"><option value="staff">Staff member</option>{canInviteManager && <option value="branch_admin">Branch administrator</option>}</select><small>{canInviteManager ? "Branch administrators can oversee only their assigned office." : "You can invite staff only to your assigned office."}</small></label>
+      <label className="field"><span>Employment status</span><select name="employment_type" value={employmentType} onChange={(event) => setEmploymentType(event.target.value as EmploymentType)}><option value="probation">Probation</option><option value="permanent">Permanent</option><option value="contract">Fixed-term contract</option><option value="temporary">Temporary</option><option value="intern">Intern / trainee</option></select></label>
+      <label className="field"><span>Employment start date</span><input name="employment_start_date" type="date" required defaultValue={todayInColombo()} /></label>
+      {employmentType === "probation" && <label className="field"><span>Probation end date</span><input name="probation_end_date" type="date" required /></label>}
+      {["contract", "temporary", "intern"].includes(employmentType) && <label className="field"><span>Employment end date</span><input name="employment_end_date" type="date" required /></label>}
+      <label className="field"><span>Date of birth</span><input name="date_of_birth" type="date" required max={todayInColombo()} /></label>
+      <label className="field"><span>National ID / passport</span><input name="national_id" required minLength={4} maxLength={50} placeholder="NIC or passport number" autoComplete="off" /></label>
+      <label className="field field-span"><span>Residential address</span><textarea name="address" required minLength={5} maxLength={500} placeholder="Full current address" /></label>
+      <div className="form-section-label field-span"><strong>Emergency contact</strong><small>Used only when the company needs to contact someone for staff safety.</small></div>
+      <label className="field"><span>Contact name</span><input name="emergency_contact_name" required minLength={2} maxLength={100} /></label>
+      <label className="field"><span>Relationship</span><input name="emergency_contact_relationship" required minLength={2} maxLength={60} placeholder="Parent, spouse, sibling..." /></label>
+      <label className="field"><span>Emergency phone</span><input name="emergency_contact_phone" type="tel" required minLength={7} maxLength={30} /></label>
       <label className="field"><span>Full-day start</span><input name="expected_arrival" type="time" required defaultValue="09:00" /><small>Normal workday default</small></label>
       <label className="field"><span>Full-day finish</span><input name="expected_departure" type="time" required defaultValue="17:00" /><small>Normal workday default</small></label>
       <label className="field"><span>Half-day start</span><input name="half_day_arrival" type="time" required defaultValue="09:00" /><small>Can be adjusted per employee</small></label>
@@ -546,10 +580,17 @@ function StaffModal({ branches, defaultBranchId, onClose, onCreated }: { branche
       <label className="field"><span>Sunday schedule</span><select name="sunday_type" defaultValue="off"><option value="off">Off</option><option value="half_day">Half day</option><option value="full_day">Full day</option></select></label>
       <label className="field"><span>Monthly leave days</span><input name="monthly_leave_days" type="number" min="0" max="10" step="0.5" required defaultValue="1" /></label>
       <label className="field"><span>Annual leave days</span><input name="annual_leave_days" type="number" min="0" max="60" step="0.5" required defaultValue="14" /></label>
+      <input type="hidden" name="expires_in_days" value="7" />
       {error && <div className="form-alert error field-span">{error}</div>}
-      <div className="modal-actions field-span"><button type="button" className="button button-ghost" onClick={onClose}>Cancel</button><button className="button button-primary" disabled={loading}>{loading ? "Creating…" : "Create account"}</button></div>
+      <div className="modal-actions field-span"><button type="button" className="button button-ghost" onClick={onClose}>Cancel</button><button className="button button-primary" disabled={loading}>{loading ? "Creating invitation…" : "Create invitation"}</button></div>
     </form>
   </div></div>;
+}
+
+function InvitationReceiptModal({ receipt, onClose }: { receipt: { fullName: string; email: string; link: string; loginLink: string; companyName: string; emailSent: boolean; emailError?: string }; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() { await navigator.clipboard.writeText(`${receipt.companyName}\nHello ${receipt.fullName},\nActivate your account (one time): ${receipt.link}\nAfter activation, sign in here: ${receipt.loginLink}\nUsername: ${receipt.email}`); setCopied(true); }
+  return <div className="modal-backdrop elevated-modal"><div className="modal credential-receipt-modal" role="dialog" aria-modal="true"><div className="credential-success-icon"><CheckCircle2 size={32} /></div><span className="eyebrow">INVITATION READY</span><h2>Invite {receipt.fullName}</h2><p>The activation link works once. The company sign-in link remains available after setup.</p><div className={`delivery-status ${receipt.emailSent ? "sent" : "warning"}`}>{receipt.emailSent ? <><Mail size={18} /><span><strong>Invitation email sent</strong><small>{receipt.email} received the private registration link.</small></span></> : <><Mail size={18} /><span><strong>Email was not delivered</strong><small>{receipt.emailError || "Copy the links and send them securely."}</small></span></>}</div><div className="invite-link-box"><small>PERSONAL ONE-TIME ACTIVATION</small><strong>{receipt.link}</strong></div><div className="invite-link-box client-login-link"><small>{receipt.companyName.toUpperCase()} STAFF LOGIN</small><strong>{receipt.loginLink}</strong></div><div className="form-alert success"><ShieldCheck size={17} /> Activation and daily sign-in use separate links. Both are hosted securely in the same app.</div><div className="modal-actions"><button className="button button-ghost" onClick={() => void copy()}><Copy size={16} /> {copied ? "Copied" : "Copy welcome message"}</button><button className="button button-primary" onClick={onClose}>Done</button></div></div></div>;
 }
 
 type CredentialReceipt = {
@@ -661,7 +702,7 @@ function AdminLeaveModal({ staff, defaultUserId, onClose, onCreated }: { staff: 
   </div></div>;
 }
 
-function SettingsView({ branches, today }: { branches: Branch[]; today: string }) {
+function SettingsView({ admin, branches, today }: { admin: Profile; branches: Branch[]; today: string }) {
   const [pushActive, setPushActive] = useState(false);
   const [pushConfigured, setPushConfigured] = useState(false);
   const [emailConfigured, setEmailConfigured] = useState(false);
@@ -671,6 +712,7 @@ function SettingsView({ branches, today }: { branches: Branch[]; today: string }
   const [cycleSaving, setCycleSaving] = useState(false);
   const [cycleMessage, setCycleMessage] = useState("");
   const [issues, setIssues] = useState<SupportIssue[]>([]);
+  const [avatarPath, setAvatarPath] = useState(admin.avatar_path ?? null);
   const start = `${today.slice(0, 7)}-01`;
 
   useEffect(() => {
@@ -723,6 +765,7 @@ function SettingsView({ branches, today }: { branches: Branch[]; today: string }
 
   return <><div className="page-heading"><div><span className="eyebrow">SYSTEM CONTROL</span><h1>Settings & setup</h1><p>Backups, delivery services and security controls in one working dashboard.</p></div></div>
     <div className="settings-grid">
+      <section className="panel settings-card"><div className="settings-card-head"><span><Users size={20} /></span><div><h2>Portal profile photo</h2><p>Shown beside your company account and in the platform directory.</p></div></div><ProfilePhotoEditor profileId={admin.id} name={admin.full_name} avatarPath={avatarPath} onChanged={setAvatarPath} /></section>
       <section className="panel settings-card settings-wide payroll-cycle-settings"><div className="settings-card-head"><span><CalendarRange size={20} /></span><div><h2>Salary calculation dates</h2><p>Choose the first day of every salary cycle. A cycle starting on the 15th automatically closes on the 14th of the next month, without overlapping dates.</p></div></div><div className="payroll-cycle-setting-row"><label className="field"><span>Cycle starts on day</span><input type="number" min="1" max="28" value={cycleStartDay} onChange={(event) => setCycleStartDay(Math.min(28, Math.max(1, Number(event.target.value))))} /></label><div><small>ACCOUNTANT PERIOD</small><strong>{ordinalDay(cycleStartDay)} → {cycleStartDay === 1 ? "month end" : ordinalDay(cycleStartDay - 1)}</strong><p>Salary creation will automatically use this saved date range.</p></div><button className="button button-primary" onClick={() => void savePayrollCycle()} disabled={cycleSaving}><Save size={16} /> {cycleSaving ? "Saving…" : "Save salary dates"}</button></div>{cycleMessage && <small className="settings-message">{cycleMessage}</small>}</section>
       <section className="panel settings-card settings-wide"><div className="settings-card-head"><span><Download size={20} /></span><div><h2>Branch-wise monthly CSV ledgers</h2><p>One clear row per employee and scheduled date, including absence, leave, holiday, weekly-off and attendance details.</p></div></div><div className="backup-list"><a className="backup-row featured" href={`/api/admin/backups/attendance?branch_id=all&start=${start}&end=${today}`}><span className="branch-letter">ALL</span><div><strong>All branches · {format(parseISO(start), "MMMM yyyy")}</strong><small>{start} to {today}</small></div><Download size={18} /></a>{branches.map((branch) => <a className="backup-row" key={branch.id} href={`/api/admin/backups/attendance?branch_id=${branch.id}&start=${start}&end=${today}`}><span className="branch-letter">{branch.code.slice(0, 2)}</span><div><strong>{branch.name} · {format(parseISO(start), "MMMM yyyy")}</strong><small>{branch.code} separate attendance ledger</small></div><Download size={18} /></a>)}</div></section>
       <section className="panel settings-card"><div className="settings-card-head"><span><Bell size={20} /></span><div><h2>Background notifications</h2><p>Web Push powers leave, calendar and shift alerts outside the app.</p></div></div><div className={`system-status ${pushConfigured ? "ready" : "warning"}`}><i />{pushConfigured ? pushActive ? "Push is active on this device" : "Push service is configured" : "VAPID keys are required"}</div><button className="button button-primary button-full" onClick={() => void enablePush()} disabled={!pushConfigured || busy}>{busy ? "Testing..." : pushActive ? "Send test notification" : "Enable on this device"}</button>{message && <small className="settings-message">{message}</small>}</section>
@@ -738,7 +781,13 @@ function NavButton({ active, icon, label, count, onClick }: { active: boolean; i
 function StatCard({ label, value, detail, icon, tone }: { label: string; value: string; detail: string; icon: React.ReactNode; tone: string }) { return <article className={`stat-card ${tone}`}><span className={`stat-icon ${tone}`}>{icon}</span><div><small>{label}</small><strong>{value}</strong><p>{detail}</p></div></article>; }
 function PanelHead({ eyebrow, title, action, onClick }: { eyebrow: string; title: string; action?: string; onClick?: () => void }) { return <div className="panel-head"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div>{action && <button onClick={onClick}>{action} <ChevronDown size={15} /></button>}</div>; }
 function initials(name: string) { return name.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase(); }
+function daysBetween(start: string, end: string) { return Math.round((Date.parse(`${end}T12:00:00Z`) - Date.parse(`${start}T12:00:00Z`)) / 86_400_000); }
+function profileCompletion(profile: Profile) {
+  const fields = [profile.avatar_path, profile.department, profile.national_id, profile.address, profile.emergency_contact_name, profile.emergency_contact_phone];
+  return Math.round(fields.filter(Boolean).length / fields.length * 100);
+}
 function roleTitle(role: string) { return role === "branch_admin" ? "Branch admin" : "Staff"; }
+function employmentTypeLabel(value: Profile["employment_type"] | undefined) { return value ? `${value.charAt(0).toUpperCase()}${value.slice(1).replace("_", " ")}` : "Employment not set"; }
 function scheduleSummary(schedule: WorkScheduleDay[]) {
   const halfDays = schedule.filter((day) => day.day_type === "half_day");
   if (!halfDays.length) return "No half days · select to edit";
@@ -747,3 +796,4 @@ function scheduleSummary(schedule: WorkScheduleDay[]) {
 }
 function ordinalDay(value: number) { const suffix = value % 10 === 1 && value !== 11 ? "st" : value % 10 === 2 && value !== 12 ? "nd" : value % 10 === 3 && value !== 13 ? "rd" : "th"; return `${value}${suffix}`; }
 function formatWorkMinutes(minutes: number) { return `${Math.floor(minutes / 60)}h ${minutes % 60}m`; }
+function todayInColombo() { return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Colombo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()); }

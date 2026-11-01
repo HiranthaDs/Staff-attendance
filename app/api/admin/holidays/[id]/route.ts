@@ -16,6 +16,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (!isTrustedMutationOrigin(request)) return NextResponse.json({ error: "This request did not come from the app." }, { status: 403 });
   const actor = await getApiAdmin();
   if ("error" in actor) return actor.error;
+  if (actor.profile.role !== "company_admin") return NextResponse.json({ error: "Only a company owner can review holidays." }, { status: 403 });
   const id = z.string().uuid().safeParse((await context.params).id);
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!id.success || !parsed.success) return NextResponse.json({ error: "Choose a valid holiday decision." }, { status: 400 });
@@ -42,7 +43,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   const recipientIds = existing.proposed_by ? [existing.proposed_by] : [];
   if (parsed.data.status === "approved") {
-    let recipients = actor.admin.from("profiles").select("id").eq("active", true).neq("role", "super_admin");
+    let recipients = actor.admin.from("profiles").select("id").eq("active", true).in("role", ["branch_admin", "staff"]);
     if (existing.branch_id) recipients = recipients.eq("branch_id", existing.branch_id);
     const { data: people } = await recipients;
     recipientIds.push(...(people ?? []).map((person) => person.id));

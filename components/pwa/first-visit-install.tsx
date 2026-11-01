@@ -20,12 +20,14 @@ export function FirstVisitInstall({ persistent = false }: { persistent?: boolean
       setStandalone(standalone);
       const dismissedAt = Number(window.localStorage.getItem(DISMISS_KEY)) || 0;
       if (persistent || (!standalone && Date.now() - dismissedAt > RESHOW_MS)) setVisible(true);
-      setIos(/iPad|iPhone|iPod/i.test(navigator.userAgent));
+      setIos(/iPad|iPhone|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
       setPrompt(window.__presenceInstallPrompt ?? null);
     }, 0);
     const ready = () => { setPrompt(window.__presenceInstallPrompt ?? null); setVisible(true); };
+    const installed = () => { setPrompt(null); setStandalone(true); setVisible(persistent); };
     window.addEventListener("presence:install-ready", ready);
-    return () => { window.clearTimeout(initialize); window.removeEventListener("presence:install-ready", ready); };
+    window.addEventListener("presence:app-installed", installed);
+    return () => { window.clearTimeout(initialize); window.removeEventListener("presence:install-ready", ready); window.removeEventListener("presence:app-installed", installed); };
   }, [persistent]);
 
   function dismiss() {

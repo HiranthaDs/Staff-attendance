@@ -28,9 +28,10 @@ export async function POST(request: Request) {
   if ("error" in actor) return actor.error;
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Describe the problem so an administrator can help." }, { status: 400 });
-  const result = await actor.admin.from("support_issues").insert({ reporter_id: actor.user.id, ...parsed.data }).select("*").single();
+  if (!actor.profile.organization_id) return NextResponse.json({ error: "Support issues belong to a company workspace." }, { status: 403 });
+  const result = await actor.admin.from("support_issues").insert({ reporter_id: actor.user.id, organization_id: actor.profile.organization_id, ...parsed.data }).select("*").single();
   if (result.error) return databaseMutationError(result.error, "The issue report could not be sent.");
-  const { data: admins } = await actor.admin.from("profiles").select("id").eq("role", "super_admin").eq("active", true);
+  const { data: admins } = await actor.admin.from("profiles").select("id").eq("role", "company_admin").eq("active", true);
   await notifyUsers({
     recipientIds: (admins ?? []).map((admin) => admin.id),
     kind: "system",

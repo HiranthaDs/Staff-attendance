@@ -4,7 +4,7 @@ import { getApiActor } from "@/lib/api-auth";
 import { localDateParts } from "@/lib/attendance";
 import { employeeLeaveDays } from "@/lib/leave";
 import { isTrustedMutationOrigin } from "@/lib/attendance-backend";
-import { notifyUsers, superAdminIds } from "@/lib/notifications";
+import { companyAdminIds, notifyUsers } from "@/lib/notifications";
 import { loadCompanyHolidays, loadWorkSchedule } from "@/lib/workday-data";
 
 const schema = z.object({
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   if (!isTrustedMutationOrigin(request)) return NextResponse.json({ error: "This request did not come from the app." }, { status: 403 });
   const actor = await getApiActor();
   if ("error" in actor) return actor.error;
-  if (actor.profile.role === "super_admin") return NextResponse.json({ error: "Leave requests are available to employee accounts only." }, { status: 403 });
+  if (actor.profile.role === "super_admin" || actor.profile.role === "company_admin" || !actor.profile.organization_id) return NextResponse.json({ error: "Leave requests are available to employee accounts only." }, { status: 403 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Complete every leave request field." }, { status: 400 });
   const input = parsed.data;
@@ -75,11 +75,12 @@ export async function POST(request: Request) {
 
   const { data: leave, error } = await actor.admin.from("leave_requests").insert({ ...input, requested_days: days, user_id: actor.user.id }).select().single();
   if (error) {
-    const conflict = error.code === "23P01" || error.message === "LEAVE_ATTENDANCE_OVERLAP";
-    return NextResponse.json({ error: conflict ? "This leave overlaps another request or recorded attendance." : "The leave request could not be saved." }, { status: conflict ? 409 : 500 });
+    const conflict = error.code === "23P01" || error.message.includes("LEAVE_ATTENDANCE_OVERLAP");
+    const balance = error.message.includes("LEAVE_BALANCE_EXCEEDED");
+    return NextResponse.json({ error: conflict ? "This leave overlaps another request or recorded attendance." : balance ? "Your leave balance changed. Review the remaining balance and try again." : "The leave request could not be saved." }, { status: conflict || balance ? 409 : 500 });
   }
   await notifyUsers({
-    recipientIds: await superAdminIds(),
+    recipientIds: await companyAdminIds(actor.profile.organization_id),
     kind: "leave",
     title: `New leave request from ${actor.profile.full_name}`,
     body: `${days} day${days === 1 ? "" : "s"} of ${input.leave_type} leave from ${input.start_date} to ${input.end_date}. Reason: ${input.reason}`,

@@ -19,12 +19,13 @@ export async function POST(request: Request) {
   if (!isTrustedMutationOrigin(request)) return NextResponse.json({ error: "This request did not come from the app." }, { status: 403 });
   const actor = await getApiAdmin();
   if ("error" in actor) return actor.error;
-  if (actor.profile.role !== "super_admin") return NextResponse.json({ error: "Only a super admin can create branches." }, { status: 403 });
+  if (actor.profile.role !== "company_admin" || !actor.profile.organization_id) return NextResponse.json({ error: "Only a company owner can create branches." }, { status: 403 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Check the branch details and try again." }, { status: 400 });
   const input = parsed.data;
 
   const branchValues = {
+    organization_id: actor.profile.organization_id,
     name: input.name,
     code: input.code.toUpperCase(),
     address: input.address,
@@ -70,6 +71,7 @@ export async function PATCH(request: Request) {
   if (!isTrustedMutationOrigin(request)) return NextResponse.json({ error: "This request did not come from the app." }, { status: 403 });
   const actor = await getApiAdmin();
   if ("error" in actor) return actor.error;
+  if (actor.profile.role !== "company_admin") return NextResponse.json({ error: "Only a company owner can update branches." }, { status: 403 });
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Check the branch policy values and try again." }, { status: 400 });
 

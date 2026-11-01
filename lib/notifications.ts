@@ -91,16 +91,16 @@ export async function notifyUsers(input: NotificationInput) {
   return { created: createdRecipients.length, pushed };
 }
 
-export async function activeUserIds(branchId?: string | null) {
+export async function activeUserIds(organizationId: string, branchId?: string | null) {
   const admin = createAdminClient();
-  let query = admin.from("profiles").select("id").eq("active", true).neq("role", "super_admin");
+  let query = admin.from("profiles").select("id").eq("organization_id", organizationId).eq("active", true).in("role", ["branch_admin", "staff"]);
   if (branchId) query = query.eq("branch_id", branchId);
   const { data } = await query;
   return (data ?? []).map((profile) => profile.id as string);
 }
 
-export async function superAdminIds() {
+export async function companyAdminIds(organizationId: string) {
   const admin = createAdminClient();
-  const { data } = await admin.from("profiles").select("id").eq("active", true).eq("role", "super_admin");
+  const { data } = await admin.from("profiles").select("id").eq("organization_id", organizationId).eq("active", true).eq("role", "company_admin");
   return (data ?? []).map((profile) => profile.id as string);
 }

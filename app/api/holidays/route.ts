@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getApiActor } from "@/lib/api-auth";
 import { isTrustedMutationOrigin } from "@/lib/attendance-backend";
 import { databaseMutationError, isMigrationRequired } from "@/lib/database-errors";
-import { notifyUsers, superAdminIds } from "@/lib/notifications";
+import { companyAdminIds, notifyUsers } from "@/lib/notifications";
 import { loadCompatibilityHolidays, saveCompatibilityHoliday } from "@/lib/holiday-store";
 import type { Branch, CompanyHoliday } from "@/lib/types";
 
@@ -20,13 +20,14 @@ export async function POST(request: Request) {
   if (!isTrustedMutationOrigin(request)) return NextResponse.json({ error: "This request did not come from the app." }, { status: 403 });
   const actor = await getApiActor();
   if ("error" in actor) return actor.error;
+  if (actor.profile.role === "super_admin" || !actor.profile.organization_id) return NextResponse.json({ error: "Holiday management belongs to a company workspace." }, { status: 403 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Enter a date, clear holiday name and reason." }, { status: 400 });
   const input = parsed.data;
   if (input.end_date < input.start_date) return NextResponse.json({ error: "The holiday end date cannot be before its start date." }, { status: 400 });
   const rangeDays = Math.round((new Date(`${input.end_date}T12:00:00Z`).getTime() - new Date(`${input.start_date}T12:00:00Z`).getTime()) / 86_400_000) + 1;
   if (rangeDays > 45) return NextResponse.json({ error: "A holiday range cannot be longer than 45 days." }, { status: 400 });
-  const isAdmin = actor.profile.role === "super_admin";
+  const isAdmin = actor.profile.role === "company_admin";
   const branchId = isAdmin ? input.branch_id || null : actor.profile.branch_id;
   if (!isAdmin && !branchId) return NextResponse.json({ error: "Your account must have a branch before suggesting a holiday." }, { status: 409 });
 
@@ -40,13 +41,16 @@ export async function POST(request: Request) {
     .lte("holiday_date", input.end_date).gte("end_date", input.start_date).eq("name", input.name)
     .in("status", ["pending", "approved"]);
   duplicateQuery = branchId ? duplicateQuery.eq("branch_id", branchId) : duplicateQuery.is("branch_id", null);
-  const [{ data: duplicate }, compatibility] = await Promise.all([duplicateQuery.limit(1), loadCompatibilityHolidays()]);
+  const duplicateResult = await duplicateQuery.limit(1);
+  const duplicate = duplicateResult.data;
+  const compatibility = duplicateResult.error && isMigrationRequired(duplicateResult.error) ? await loadCompatibilityHolidays() : [];
   const compatibilityDuplicate = compatibility.some((holiday) => holiday.name.toLowerCase() === input.name.toLowerCase()
     && holiday.branch_id === branchId && ["pending", "approved"].includes(holiday.status)
     && holiday.holiday_date <= input.end_date && (holiday.end_date || holiday.holiday_date) >= input.start_date);
   if (duplicate?.length || compatibilityDuplicate) return NextResponse.json({ error: "This holiday is already pending or approved for that audience." }, { status: 409 });
 
   const insert = await actor.admin.from("company_holidays").insert({
+    organization_id: actor.profile.organization_id,
     holiday_date: input.start_date,
     end_date: input.end_date,
     name: input.name,
@@ -64,6 +68,7 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     holiday = await saveCompatibilityHoliday({
       id: crypto.randomUUID(), holiday_date: input.start_date, end_date: input.end_date, name: input.name,
+      organization_id: actor.profile.organization_id,
       holiday_type: input.holiday_type, branch_id: branchId, status: isAdmin ? "approved" : "pending",
       source: isAdmin ? "admin" : "staff", source_reference: "Compatibility storage pending database migration",
       reason: input.reason, proposed_by: actor.user.id, reviewed_by: isAdmin ? actor.user.id : null,
@@ -89,7 +94,7 @@ export async function POST(request: Request) {
     });
   } else {
     await notifyUsers({
-      recipientIds: await superAdminIds(),
+      recipientIds: await companyAdminIds(actor.profile.organization_id),
       kind: "calendar",
       title: `Holiday suggestion from ${actor.profile.full_name}`,
       body: `${input.name} was suggested for ${dateLabel}. It will not affect attendance until approved.`,

@@ -13,6 +13,6 @@ export async function POST(request: Request) {
   // admin-level password change revokes the user's refresh token.
   const { error } = await actor.sessionClient.auth.updateUser({ password: parsed.data.password });
   if (error) return NextResponse.json({ error: "Password could not be updated." }, { status: 500 });
-  await actor.admin.from("profiles").update({ must_reset_password: false }).eq("id", actor.user.id);
+  await actor.serviceAdmin.from("profiles").update({ must_reset_password: false }).eq("id", actor.user.id);
   return NextResponse.json({ success: true });
 }

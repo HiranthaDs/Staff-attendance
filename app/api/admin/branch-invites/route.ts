@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getApiAdmin } from "@/lib/api-auth";
+import { isTrustedMutationOrigin } from "@/lib/attendance-backend";
 
 const schema = z.object({
   proposed_name: z.string().trim().min(2).max(80),
@@ -11,10 +12,11 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
+  if (!isTrustedMutationOrigin(request)) return NextResponse.json({ error: "This request did not come from the app." }, { status: 403 });
   const actor = await getApiAdmin();
   if ("error" in actor) return actor.error;
-  if (actor.profile.role !== "super_admin") {
-    return NextResponse.json({ error: "Only a super admin can generate branch setup links." }, { status: 403 });
+  if (actor.profile.role !== "company_admin" || !actor.profile.organization_id) {
+    return NextResponse.json({ error: "Only a company owner can generate branch setup links." }, { status: 403 });
   }
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Check the proposed branch details." }, { status: 400 });
@@ -33,6 +35,7 @@ export async function POST(request: Request) {
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const expiresAt = new Date(Date.now() + input.expires_in_hours * 60 * 60 * 1000).toISOString();
   const { data: invite, error } = await actor.admin.from("branch_setup_invites").insert({
+    organization_id: actor.profile.organization_id,
     token_hash: tokenHash,
     proposed_name: input.proposed_name,
     proposed_code: code,

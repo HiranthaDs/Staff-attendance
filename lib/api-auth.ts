@@ -10,10 +10,10 @@ export async function getApiActor() {
     return { error: NextResponse.json({ error: "Your session has expired." }, { status: 401 }) };
   }
 
-  const admin = createAdminClient();
-  const { data: profile } = await admin
+  const serviceAdmin = createAdminClient();
+  const { data: profile } = await serviceAdmin
     .from("profiles")
-    .select("*, branch:branches(*)")
+    .select("*, branch:branches(*), organization:organizations(*)")
     .eq("id", data.user.id)
     .single();
 
@@ -21,14 +21,30 @@ export async function getApiActor() {
     return { error: NextResponse.json({ error: "This account is not active." }, { status: 403 }) };
   }
 
-  return { user: data.user, profile: profile as Profile, admin, sessionClient: supabase };
+  if (profile.organization && profile.organization.status !== "active") {
+    return { error: NextResponse.json({ error: "This company workspace is suspended." }, { status: 403 }) };
+  }
+
+  // Database work uses the caller's session so PostgreSQL RLS remains the final tenant boundary.
+  // The service client is reserved for Supabase Auth administration and platform-only operations.
+  return { user: data.user, profile: profile as Profile, admin: supabase, serviceAdmin, sessionClient: supabase };
 }
 
 export async function getApiAdmin() {
   const result = await getApiActor();
   if ("error" in result) return result;
+  if (result.profile.role !== "company_admin" && result.profile.role !== "branch_admin") {
+    return { error: NextResponse.json({ error: "Company administrator access required." }, { status: 403 }) };
+  }
+  return result;
+}
+
+
+export async function getApiSuperAdmin() {
+  const result = await getApiActor();
+  if ("error" in result) return result;
   if (result.profile.role !== "super_admin") {
-    return { error: NextResponse.json({ error: "Super administrator access required." }, { status: 403 }) };
+    return { error: NextResponse.json({ error: "Platform super administrator access required." }, { status: 403 }) };
   }
   return result;
 }

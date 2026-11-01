@@ -34,7 +34,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 
   const { data: updated, error } = await actor.admin.from("leave_requests").update({ status: parsed.data.status, admin_note: parsed.data.admin_note || null, reviewed_by: actor.user.id, reviewed_at: new Date().toISOString() }).eq("id", id).eq("status", "pending").select("*, profile:profiles(full_name, employee_code, branch_id)").single();
-  if (error) return NextResponse.json({ error: error.message === "LEAVE_ATTENDANCE_OVERLAP" ? "This full-day leave now overlaps recorded attendance." : "The decision could not be saved." }, { status: error.message === "LEAVE_ATTENDANCE_OVERLAP" ? 409 : 500 });
+  if (error) {
+    const attendanceConflict = error.message.includes("LEAVE_ATTENDANCE_OVERLAP");
+    const balanceConflict = error.message.includes("LEAVE_BALANCE_EXCEEDED");
+    return NextResponse.json({ error: attendanceConflict ? "This full-day leave now overlaps recorded attendance." : balanceConflict ? "This employee no longer has enough leave balance." : "The decision could not be saved." }, { status: attendanceConflict || balanceConflict ? 409 : 500 });
+  }
   if (parsed.data.status === "approved" && leave.portion === "full_day") {
     await actor.admin.from("attendance_absences").delete().eq("user_id", leave.user_id).gte("attendance_date", leave.start_date).lte("attendance_date", leave.end_date);
   }

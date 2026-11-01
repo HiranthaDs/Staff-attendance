@@ -25,7 +25,7 @@ export async function POST(request: Request) {
 
   const { data: employee } = await actor.admin.from("profiles")
     .select("id, active, branch_id, expected_arrival, expected_departure, annual_leave_days, monthly_leave_days")
-    .eq("id", input.user_id).neq("role", "super_admin").maybeSingle();
+    .eq("id", input.user_id).in("role", ["branch_admin", "staff"]).maybeSingle();
   if (!employee || !employee.active) return NextResponse.json({ error: "Choose an active employee." }, { status: 400 });
   if (input.end_date < input.start_date) return NextResponse.json({ error: "The end date must be on or after the start date." }, { status: 400 });
   if (input.portion !== "full_day" && input.start_date !== input.end_date) {
@@ -86,8 +86,9 @@ export async function POST(request: Request) {
     reviewed_at: new Date().toISOString(),
   }).select("*, profile:profiles(full_name, employee_code, branch_id)").single();
   if (error) {
-    const conflict = error.code === "23P01" || error.message === "LEAVE_ATTENDANCE_OVERLAP";
-    return NextResponse.json({ error: conflict ? "This leave overlaps another request or recorded attendance." : "The employee leave could not be recorded." }, { status: conflict ? 409 : 500 });
+    const conflict = error.code === "23P01" || error.message.includes("LEAVE_ATTENDANCE_OVERLAP");
+    const balance = error.message.includes("LEAVE_BALANCE_EXCEEDED");
+    return NextResponse.json({ error: conflict ? "This leave overlaps another request or recorded attendance." : balance ? "The employee no longer has enough leave balance." : "The employee leave could not be recorded." }, { status: conflict || balance ? 409 : 500 });
   }
   if (input.portion === "full_day") {
     await actor.admin.from("attendance_absences").delete().eq("user_id", input.user_id).gte("attendance_date", input.start_date).lte("attendance_date", input.end_date);

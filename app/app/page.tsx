@@ -10,7 +10,8 @@ import type { AttendanceRecord, CalendarNote, CompanyHoliday, LeaveRequest, Miss
 
 export default async function EmployeePage() {
   const profile = await requireProfile();
-  if (profile.role === "super_admin") redirect("/admin");
+  if (profile.role === "super_admin") redirect("/super-admin");
+  if (profile.role === "company_admin") redirect("/admin");
   const supabase = await createClient();
   const timezone = profile.branch?.timezone || "Asia/Colombo";
   const renderedAt = new Date();
@@ -23,7 +24,7 @@ export default async function EmployeePage() {
     supabase.from("attendance_records").select("*").eq("user_id", profile.id).eq("attendance_date", today).maybeSingle(),
     supabase.from("attendance_records").select("*, branch:branches(name, code)").eq("user_id", profile.id).order("attendance_date", { ascending: false }).limit(10),
     supabase.from("leave_requests").select("*").eq("user_id", profile.id).gte("start_date", yearStart).lte("start_date", yearEnd).order("created_at", { ascending: false }),
-    loadCalendarNotes({ startDate: yearStart, endDate: calendarEnd, branchId: profile.branch_id }),
+    loadCalendarNotes(supabase, { startDate: yearStart, endDate: calendarEnd, branchId: profile.branch_id }),
     loadCompanyHolidays(supabase, { startDate: yearStart, endDate: calendarEnd, branchId: profile.branch_id, includePending: true }),
     loadWorkSchedule(supabase, { userId: profile.id, arrival: profile.expected_arrival, departure: profile.expected_departure }),
     supabase.from("attendance_absences").select("*").eq("user_id", profile.id).is("acknowledged_at", null).order("attendance_date", { ascending: false }).limit(5),

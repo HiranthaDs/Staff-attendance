@@ -31,6 +31,7 @@ import { OfficeMap, type StaffMapLocation } from "@/components/employee/office-m
 import { WorkCalendar } from "@/components/calendar/work-calendar";
 import { NotificationCenter } from "@/components/notifications/notification-center";
 import { FirstVisitInstall } from "@/components/pwa/first-visit-install";
+import { ProfileAvatar } from "@/components/profile/profile-avatar";
 import { captureBestBrowserLocation } from "@/lib/browser-location";
 import { createClient } from "@/lib/supabase/client";
 import { approvedHolidayForDate, approvedLeaveForDate, scheduleForDate } from "@/lib/workday";
@@ -277,7 +278,7 @@ export function EmployeeDashboard({
   return (
     <main className="employee-shell ios-shell">
       <header className="mobile-header ios-glass">
-        <div className="staff-header-person"><Link className="avatar-button" href="/profile" aria-label="Open profile page">{initials(profile.full_name)}</Link><span><small>Hi, {firstName}</small><strong>{profile.job_title || "Staff member"}</strong></span></div>
+        <div className="staff-header-person"><Link className="avatar-button" href="/profile" aria-label="Open profile page"><ProfileAvatar id={profile.id} name={profile.full_name} avatarPath={profile.avatar_path} /></Link><span><small>Hi, {firstName}</small><strong>{profile.job_title || "Staff member"}</strong></span></div>
         <div className="mobile-header-actions"><NotificationCenter compact /></div>
       </header>
 
@@ -343,7 +344,7 @@ export function EmployeeDashboard({
         </section>
 
         <section className="dashboard-section" id="calendar">
-          <WorkCalendar today={today} initialNotes={calendarNotes} initialHolidays={holidays} attendance={attendance} leaves={leaves} workSchedule={workSchedule} canProposeHoliday />
+          <WorkCalendar today={today} initialNotes={calendarNotes} initialHolidays={holidays} attendance={attendance} leaves={leaves} workSchedule={workSchedule} canProposeHoliday loadAttendanceHistory />
         </section>
 
         <section className="dashboard-section" id="leave">
@@ -554,6 +555,5 @@ function formatDelay(minutes: number) {
   const rest = minutes % 60;
   return rest ? `${hours}h ${rest}m` : `${hours}h`;
 }
-function initials(name: string) { return name.split(" ").slice(0, 2).map((part) => part[0]).join("").toUpperCase(); }
 function leaveTypeLabel(value: string) { return `${value.charAt(0).toUpperCase()}${value.slice(1)} leave`; }
 function workdayTypeLabel(value: WorkScheduleDay["day_type"]) { return value === "half_day" ? "Half day" : value === "off" ? "Day off" : "Full day"; }

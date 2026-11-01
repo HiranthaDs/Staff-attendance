@@ -6,13 +6,19 @@ export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
   const pathname = request.nextUrl.pathname;
   const isPublic =
-    pathname === "/login" ||
+    pathname.startsWith("/login") ||
+    pathname === "/about" ||
+    pathname === "/offline" ||
+    pathname === "/robots.txt" ||
+    pathname === "/sitemap.xml" ||
     pathname === "/forgot-password" ||
     pathname === "/auth/callback" ||
     pathname === "/auth/update-password" ||
     pathname === "/api/auth/login" ||
     pathname === "/api/health" ||
-    pathname.startsWith("/branch-setup/");
+    pathname.startsWith("/branch-setup/") ||
+    pathname.startsWith("/join/") ||
+    pathname.startsWith("/api/invitations/");
 
   // Public entry points must remain available even when the external auth
   // provider is briefly unavailable. Authentication is performed by their

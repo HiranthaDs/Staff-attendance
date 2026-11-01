@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 const schema = z.object({
   email: z.string().trim().email().max(254),
   password: z.string().min(1).max(128),
+  workspace: z.string().trim().toLowerCase().min(3).max(50).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/).optional(),
 });
 
 export async function POST(request: Request) {
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("role, active, must_reset_password")
+      .select("role, active, must_reset_password, organization:organizations(status,slug)")
       .eq("id", data.user.id)
       .single();
 
@@ -49,10 +50,21 @@ export async function POST(request: Request) {
       await supabase.auth.signOut();
       return NextResponse.json({ error: "This account has been disabled." }, { status: 403 });
     }
+    const organization = Array.isArray(profile.organization) ? profile.organization[0] : profile.organization;
+    if (parsed.data.workspace && organization?.slug !== parsed.data.workspace) {
+      await supabase.auth.signOut();
+      return NextResponse.json({ error: "This account does not belong to this company portal. Use the login link provided by your administrator." }, { status: 403 });
+    }
+    if (organization && organization.status !== "active") {
+      await supabase.auth.signOut();
+      return NextResponse.json({ error: "This company workspace is suspended. Contact the platform administrator." }, { status: 403 });
+    }
 
     const redirectTo = profile.must_reset_password
       ? "/auth/update-password"
-      : profile.role === "super_admin" ? "/admin" : "/app";
+      : profile.role === "super_admin"
+        ? "/super-admin"
+        : profile.role === "company_admin" || profile.role === "branch_admin" ? "/admin" : "/app";
     return NextResponse.json({ success: true, redirectTo }, {
       headers: { "cache-control": "no-store" },
     });

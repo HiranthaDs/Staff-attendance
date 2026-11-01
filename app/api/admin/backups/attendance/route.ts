@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   const dates = dateRange(parsed.data.start, parsed.data.end);
   if (dates.length > 366) return NextResponse.json({ error: "Export one year or less at a time." }, { status: 400 });
 
-  let profilesQuery = actor.admin.from("profiles").select("*, branch:branches(*)").neq("role", "super_admin").order("full_name");
+  let profilesQuery = actor.admin.from("profiles").select("*, branch:branches(*)").in("role", ["branch_admin", "staff"]).order("full_name");
   let attendanceQuery = actor.admin.from("attendance_records").select("*").gte("attendance_date", parsed.data.start).lte("attendance_date", parsed.data.end).limit(50_000);
   if (parsed.data.branch_id !== "all") {
     profilesQuery = profilesQuery.eq("branch_id", parsed.data.branch_id);

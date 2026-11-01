@@ -40,7 +40,7 @@ export async function POST(request: Request) {
 
   const actor = await getApiActor();
   if ("error" in actor) return actor.error;
-  if (actor.profile.role === "super_admin") {
+  if (actor.profile.role === "super_admin" || actor.profile.role === "company_admin") {
     return NextResponse.json({ error: "Only employee accounts can mark attendance." }, { status: 403 });
   }
   if (actor.profile.must_reset_password) {

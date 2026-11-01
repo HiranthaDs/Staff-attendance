@@ -11,6 +11,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (!isTrustedMutationOrigin(request)) return NextResponse.json({ error: "This request did not come from the app." }, { status: 403 });
   const actor = await getApiAdmin();
   if ("error" in actor) return actor.error;
+  if (actor.profile.role !== "company_admin") return NextResponse.json({ error: "Only a company owner can reset staff passwords." }, { status: 403 });
   const userId = z.string().uuid().safeParse((await context.params).id);
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!userId.success || !parsed.success) return NextResponse.json({ error: "Choose a valid employee and temporary password." }, { status: 400 });
@@ -18,11 +19,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const { data: profile } = await actor.admin.from("profiles")
     .select("id,full_name,email,role,active")
     .eq("id", userId.data)
-    .neq("role", "super_admin")
+    .in("role", ["branch_admin", "staff"])
     .maybeSingle();
   if (!profile) return NextResponse.json({ error: "The employee account was not found." }, { status: 404 });
 
-  const { error: authError } = await actor.admin.auth.admin.updateUserById(profile.id, {
+  const { error: authError } = await actor.serviceAdmin.auth.admin.updateUserById(profile.id, {
     password: parsed.data.temporary_password,
   });
   if (authError) return NextResponse.json({ error: "The sign-in password could not be reset." }, { status: 502 });

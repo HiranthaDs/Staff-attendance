@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     admin.from("profiles")
       .select("id,full_name,expected_arrival,expected_departure,branch:branches(id,name,timezone,active)")
       .eq("active", true)
-      .neq("role", "super_admin"),
+      .in("role", ["branch_admin", "staff"]),
     admin.from("notification_preferences").select("user_id,attendance_reminders,reminder_minutes"),
   ]);
   if (error) return NextResponse.json({ error: "Staff schedules could not be loaded." }, { status: 500 });

@@ -27,6 +27,17 @@ const profileSchema = z.object({
   employee_code: z.string().trim().max(30).optional().default(""),
   branch_id: z.string().uuid(),
   job_title: z.string().trim().min(2).max(100),
+  department: z.string().trim().min(2).max(100),
+  employment_type: z.enum(["probation", "permanent", "contract", "temporary", "intern"]),
+  employment_start_date: z.string().date(),
+  probation_end_date: z.union([z.literal(""), z.string().date()]).default(""),
+  employment_end_date: z.union([z.literal(""), z.string().date()]).default(""),
+  date_of_birth: z.string().date(),
+  national_id: z.string().trim().min(4).max(50),
+  address: z.string().trim().min(5).max(500),
+  emergency_contact_name: z.string().trim().min(2).max(100),
+  emergency_contact_phone: z.string().trim().min(7).max(30),
+  emergency_contact_relationship: z.string().trim().min(2).max(60),
   monthly_leave_days: z.coerce.number().min(0).max(10),
   annual_leave_days: z.coerce.number().min(0).max(60),
   active: z.boolean(),
@@ -42,7 +53,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   const yearEnd = `${today.slice(0, 4)}-12-31`;
 
   const [profileResult, attendanceResult, leaveResult] = await Promise.all([
-    actor.admin.from("profiles").select("*, branch:branches(*)").eq("id", parsed.data).neq("role", "super_admin").maybeSingle(),
+    actor.admin.from("profiles").select("*, branch:branches(*)").eq("id", parsed.data).in("role", ["branch_admin", "staff"]).maybeSingle(),
     actor.admin.from("attendance_records").select("*, branch:branches(name, code)").eq("user_id", parsed.data).gte("attendance_date", yearStart).lte("attendance_date", yearEnd).order("attendance_date", { ascending: false }),
     actor.admin.from("leave_requests").select("*").eq("user_id", parsed.data).lte("start_date", yearEnd).gte("end_date", yearStart).order("start_date", { ascending: false }),
   ]);
@@ -70,6 +81,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (!isTrustedMutationOrigin(request)) return NextResponse.json({ error: "This request did not come from the app." }, { status: 403 });
   const actor = await getApiAdmin();
   if ("error" in actor) return actor.error;
+  if (actor.profile.role !== "company_admin") return NextResponse.json({ error: "Only a company owner can update staff accounts." }, { status: 403 });
   const id = z.string().uuid().safeParse((await context.params).id);
   if (!id.success) return NextResponse.json({ error: "Choose a valid employee." }, { status: 400 });
   const body = await request.json().catch(() => null);
@@ -77,13 +89,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const parsedProfile = profileSchema.safeParse(body);
     if (!parsedProfile.success) return NextResponse.json({ error: "Check every employee detail and try again." }, { status: 400 });
     const input = parsedProfile.data;
+    if (input.date_of_birth > new Date().toISOString().slice(0, 10) || input.date_of_birth >= input.employment_start_date) return NextResponse.json({ error: "Date of birth must be before the employment start date." }, { status: 400 });
+    if (input.employment_type === "probation" && (!input.probation_end_date || input.probation_end_date < input.employment_start_date)) return NextResponse.json({ error: "Add a valid probation end date." }, { status: 400 });
+    if (["contract", "temporary", "intern"].includes(input.employment_type) && (!input.employment_end_date || input.employment_end_date < input.employment_start_date)) return NextResponse.json({ error: "Add a valid employment end date." }, { status: 400 });
     const [{ data: employee }, { data: branch }] = await Promise.all([
-      actor.admin.from("profiles").select("id").eq("id", id.data).neq("role", "super_admin").maybeSingle(),
+      actor.admin.from("profiles").select("id").eq("id", id.data).in("role", ["branch_admin", "staff"]).maybeSingle(),
       actor.admin.from("branches").select("id").eq("id", input.branch_id).eq("active", true).maybeSingle(),
     ]);
     if (!employee) return NextResponse.json({ error: "Employee profile was not found." }, { status: 404 });
     if (!branch) return NextResponse.json({ error: "Choose an active branch." }, { status: 400 });
-    const { error: authError } = await actor.admin.auth.admin.updateUserById(id.data, {
+    const { error: authError } = await actor.serviceAdmin.auth.admin.updateUserById(id.data, {
       email: input.email.toLowerCase(),
       email_confirm: true,
       user_metadata: { full_name: input.full_name },
@@ -96,11 +111,22 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       employee_code: input.employee_code || null,
       branch_id: input.branch_id,
       job_title: input.job_title,
+      department: input.department,
+      employment_type: input.employment_type,
+      employment_start_date: input.employment_start_date,
+      probation_end_date: input.probation_end_date || null,
+      employment_end_date: input.employment_end_date || null,
+      date_of_birth: input.date_of_birth,
+      national_id: input.national_id,
+      address: input.address,
+      emergency_contact_name: input.emergency_contact_name,
+      emergency_contact_phone: input.emergency_contact_phone,
+      emergency_contact_relationship: input.emergency_contact_relationship,
       monthly_leave_days: input.monthly_leave_days,
       annual_leave_days: input.annual_leave_days,
       active: input.active,
     }).eq("id", id.data).select("*, branch:branches(*)").single();
-    if (profileError) return databaseMutationError(profileError, profileError.code === "23505" ? "That employee code is already in use." : "The employee details could not be saved.");
+    if (profileError) return databaseMutationError(profileError, profileError.code === "23505" ? "That employee code or national ID is already in use." : "The employee details could not be saved.");
     const workSchedule = await loadWorkSchedule(actor.admin, { userId: id.data, arrival: profile.expected_arrival, departure: profile.expected_departure });
     return NextResponse.json({ profile: { ...profile, work_schedule: workSchedule } });
   }
@@ -116,7 +142,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const invalidDay = input.schedule.find((day) => day.departure_time <= day.arrival_time);
   if (invalidDay) return NextResponse.json({ error: "Every scheduled time must finish after it starts." }, { status: 400 });
 
-  const { data: employee } = await actor.admin.from("profiles").select("id").eq("id", id.data).neq("role", "super_admin").maybeSingle();
+  const { data: employee } = await actor.admin.from("profiles").select("id").eq("id", id.data).in("role", ["branch_admin", "staff"]).maybeSingle();
   if (!employee) return NextResponse.json({ error: "Employee profile was not found." }, { status: 404 });
 
   const { data: workSchedule, error: scheduleError } = await actor.admin.from("employee_work_schedules")

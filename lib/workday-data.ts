@@ -27,7 +27,8 @@ export async function loadCompanyHolidays(
     .gte("end_date", input.startDate)
     .order("holiday_date");
   query = input.includePending ? query.in("status", ["approved", "pending"]) : query.eq("status", "approved");
-  const [result, compatibilityRows] = await Promise.all([query, loadCompatibilityHolidays()]);
+  const result = await query;
+  const compatibilityRows = result.error && isMigrationRequired(result.error) ? await loadCompatibilityHolidays() : [];
   let rows: CompanyHoliday[] = [];
   if (!result.error) rows = (result.data ?? []) as unknown as CompanyHoliday[];
   else if (!isMigrationRequired(result.error)) throw result.error;

@@ -1,14 +1,43 @@
-export type AppRole = "super_admin" | "branch_admin" | "staff";
+export type AppRole = "super_admin" | "company_admin" | "branch_admin" | "staff";
+export type EmploymentType = "probation" | "permanent" | "contract" | "temporary" | "intern";
+
+export type Organization = {
+  id: string;
+  name: string;
+  slug: string;
+  billing_email: string;
+  plan: "starter" | "growth" | "scale" | "enterprise";
+  staff_limit: number;
+  status: "active" | "suspended";
+  created_at: string;
+  updated_at: string;
+  member_count?: number;
+  branch_count?: number;
+  owner?: Pick<Profile, "id" | "full_name" | "email" | "avatar_path"> | null;
+};
 
 export type Profile = {
   id: string;
   full_name: string;
   email?: string;
   phone: string | null;
+  avatar_path?: string | null;
   role: AppRole;
+  organization_id: string | null;
   branch_id: string | null;
   job_title: string | null;
+  department?: string | null;
   employee_code: string | null;
+  employment_type?: EmploymentType;
+  employment_start_date?: string | null;
+  probation_end_date?: string | null;
+  employment_end_date?: string | null;
+  date_of_birth?: string | null;
+  national_id?: string | null;
+  address?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  emergency_contact_relationship?: string | null;
   expected_arrival: string;
   expected_departure: string;
   monthly_leave_days: number;
@@ -17,6 +46,7 @@ export type Profile = {
   active: boolean;
   created_at?: string;
   branch?: Branch | null;
+  organization?: Organization | null;
   work_schedule?: WorkScheduleDay[];
 };
 
@@ -32,6 +62,7 @@ export type WorkScheduleDay = {
 
 export type Branch = {
   id: string;
+  organization_id: string;
   name: string;
   code: string;
   address: string;
@@ -46,8 +77,38 @@ export type Branch = {
   active: boolean;
 };
 
+export type OrganizationInvitation = {
+  id: string;
+  organization_id: string;
+  branch_id: string | null;
+  invited_email: string;
+  role: Exclude<AppRole, "super_admin">;
+  full_name: string;
+  phone: string | null;
+  employee_code: string | null;
+  job_title: string | null;
+  department?: string | null;
+  employment_type?: EmploymentType;
+  employment_start_date?: string | null;
+  probation_end_date?: string | null;
+  employment_end_date?: string | null;
+  date_of_birth?: string | null;
+  national_id?: string | null;
+  address?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  emergency_contact_relationship?: string | null;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  expires_at: string;
+  accepted_at: string | null;
+  created_at: string;
+  branch?: Pick<Branch, "id" | "name" | "code"> | null;
+  organization?: Pick<Organization, "id" | "name" | "slug" | "status"> | null;
+};
+
 export type CalendarNote = {
   id: string;
+  organization_id?: string;
   note_date: string;
   title: string;
   note: string | null;
@@ -60,6 +121,7 @@ export type CalendarNote = {
 
 export type CompanyHoliday = {
   id: string;
+  organization_id?: string | null;
   holiday_date: string;
   end_date: string;
   name: string;
@@ -248,4 +310,17 @@ export type NotificationPreferences = {
   leave_updates: boolean;
   calendar_updates: boolean;
   reminder_minutes: number;
+};
+
+export type PlatformHotline = {
+  id: string;
+  label: string;
+  phone_e164: string;
+  availability: string | null;
+  call_enabled: boolean;
+  whatsapp_enabled: boolean;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
 };

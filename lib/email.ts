@@ -73,3 +73,24 @@ export function sendWelcomeEmail(input: { fullName: string; email: string; tempo
 export function sendPasswordResetEmail(input: { fullName: string; email: string; temporaryPassword: string }) {
   return sendEmail({ to: input.email, ...credentialsEmail({ ...input, reset: true }) });
 }
+
+export function sendInvitationEmail(input: {
+  fullName: string;
+  email: string;
+  organizationName: string;
+  invitationLink: string;
+  loginLink: string;
+  roleLabel: string;
+  expiresAt: string;
+}) {
+  const safeName = escapeHtml(input.fullName);
+  const safeOrganization = escapeHtml(input.organizationName);
+  const safeRole = escapeHtml(input.roleLabel);
+  const safeLink = escapeHtml(input.invitationLink);
+  const safeLoginLink = escapeHtml(input.loginLink);
+  const expiry = new Intl.DateTimeFormat("en-LK", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Colombo" }).format(new Date(input.expiresAt));
+  const subject = `Join ${input.organizationName} on Presence`;
+  const text = `Hi ${input.fullName},\n\nYou have been invited to join ${input.organizationName} as ${input.roleLabel}.\n\nOne-time account activation: ${input.invitationLink}\nCompany sign-in after activation: ${input.loginLink}\n\nThe private activation link expires ${expiry}.`;
+  const html = `<!doctype html><html><body style="margin:0;background:#f3f7f5;font-family:Arial,sans-serif;color:#17352f"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px"><table role="presentation" width="100%" style="max-width:580px;background:#fff;border-radius:24px;overflow:hidden;box-shadow:0 16px 40px rgba(13,73,61,.12)"><tr><td style="padding:30px;background:linear-gradient(135deg,#073f36,#087565);color:#fff"><div style="font-size:13px;font-weight:800;letter-spacing:.16em;color:#d8ff63">PRESENCE · ${safeOrganization}</div><h1 style="margin:10px 0 0;font-size:28px">Your workspace invitation</h1></td></tr><tr><td style="padding:30px"><p style="font-size:16px;line-height:1.65;margin-top:0">Hi ${safeName},</p><p style="font-size:15px;line-height:1.65">You have been invited to join <strong>${safeOrganization}</strong> as <strong>${safeRole}</strong>.</p><a href="${safeLink}" style="display:inline-block;margin:14px 0;padding:14px 22px;border-radius:12px;background:#0d493d;color:#fff;text-decoration:none;font-weight:700">Activate my account</a><p style="font-size:13px;line-height:1.6;color:#648078">This private activation link works once and expires ${escapeHtml(expiry)}. Do not forward it.</p><div style="margin-top:20px;padding:16px;border-radius:14px;background:#f3f7f5"><small style="display:block;color:#648078">PERMANENT ${safeOrganization.toUpperCase()} SIGN-IN</small><a href="${safeLoginLink}" style="display:block;margin-top:6px;color:#0d493d;word-break:break-all">${safeLoginLink}</a></div></td></tr></table></td></tr></table></body></html>`;
+  return sendEmail({ to: input.email, subject, html, text });
+}

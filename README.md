@@ -17,7 +17,11 @@ Browser geolocation requires HTTPS outside localhost. Staff should enable precis
 ## Included features
 
 - Supabase email/password authentication and cookie sessions
-- Super-admin branch and employee management
+- SaaS hierarchy with platform super admins, isolated companies, company owners, branch admins, and staff
+- Platform company provisioning, suspension controls, plans, and database-enforced active-user limits
+- Hashed, expiring, one-time registration links for company owners and staff (passwords are never sent by email)
+- Personalized company login URLs that remain separate from one-time account-activation links
+- Company-owner branch, employee, payroll, leave, and calendar management
 - Map-based branch setup with configurable 50-1,000 metre radii
 - Backward-compatible direct branch creation for databases awaiting the newest migration
 - Secure one-time links for remote branch-location capture
@@ -27,18 +31,19 @@ Browser geolocation requires HTTPS outside localhost. Staff should enable precis
 - Branch-level late-arrival and early-departure grace periods
 - Monthly and annual leave requests and approvals
 - Super-admin per-employee weekly schedule editor, with 9:00–17:00 full days and 9:00–14:00 half days by default
-- Editable employee profiles, Saturday work types, and per-day schedule hours
+- Complete employee lifecycle profiles covering probation/permanent/contract status, employment dates, department, identity, address, emergency contact, leave and schedule details
 - Gazette-backed 2026/2027 Sri Lankan holidays plus staff suggestions and super-admin approval
-- Employee and admin calendars with approved leave, holidays, weekly off-days, and timing colours
+- Employee and admin calendars with secure month-by-month attendance history, approved leave, holidays, weekly off-days, and timing colours
 - Durable notification inbox plus background Web Push for leave, calendar, start-time, and finish-time alerts
-- Branded staff welcome emails and administrator-issued temporary password emails
+- Branded owner/staff invitation emails and administrator-issued password-reset emails
 - Branch/month-named CSV ledgers with scheduled, absent, leave, holiday, off-day, and attendance rows
-- Ten-minute inactivity lock with a visible one-minute warning
+- Persistent, refresh-token-rotated sessions that remain signed in until explicit logout or a real authentication failure
 - Employee profile pages and year-to-date hour totals
 - Salary creation workspace with a company-wide configurable cycle start date, employee attendance ledger, deductions, EPF/ETF, and CSV export
 - Midnight missed-attendance recording with a highlighted next-login notice and zero worked hours
 - Staff issue reporting, administrator resolution, and an office map that shows both the office zone and the employee's live location
-- Installable responsive PWA; attendance is never queued offline
+- Installable responsive PWA with update detection, navigation preload, offline fallback, shortcuts and safe static caching; attendance is never queued offline
+- Search-safe technical SEO/AEO with structured product/FAQ data and explicit blocking of private portal routes
 - Supabase row-level security and server-only privileged access
 
 ## Local development
@@ -69,7 +74,7 @@ Browser geolocation requires HTTPS outside localhost. Staff should enable precis
    npm run dev
    ```
 
-Migrations are in `supabase/migrations` and must be applied in filename order. The schedule migrations add per-employee workdays, approved/pending holidays, overlap protection, database workday guards, and the current 9–5 / 9–2 defaults. The payroll-support migration adds global salary-cycle dates, explicit missed-attendance notices, and staff issue reports.
+Migrations are in `supabase/migrations` and must be applied in filename order. The SaaS migrations add organization keys, tenant-aware row-level security, company-owner invitations, per-company uniqueness and indexed capacity controls. The database serializes concurrent account activations before enforcing each company's active-user limit, so simultaneous invitation acceptance cannot overfill a plan.
 
 ## Deploy to Vercel
 
@@ -100,10 +105,10 @@ HTTPS from Vercel enables browser geolocation and PWA installation. After changi
 
 ## First run
 
-1. Sign in as the super admin.
-2. Create a branch and place its office pin on the map, or send a secure setup link to the branch manager.
-3. Choose a radius that covers the real office area.
-4. Configure attendance tolerances, employee work hours, and leave allowances.
+1. Sign in as the platform super admin and create a company workspace.
+2. Send the generated owner-registration link; the company owner chooses their password and signs in.
+3. The company owner creates branches and sends one-time registration links to staff or branch administrators.
+4. Configure attendance tolerances, employee work hours, leave allowances, and payroll settings.
 5. Test clock-in and clock-out on a real phone with precise location enabled.
 
 ## Verification commands

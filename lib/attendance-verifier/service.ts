@@ -56,7 +56,7 @@ function requireActiveContext(context: AttendanceContext | null, userId: string)
     throw new AttendanceServiceError("Employee profile was not found.", 404, "PROFILE_NOT_FOUND");
   }
   if (!context.profile.active) throw new AttendanceServiceError("This account is not active.", 403, "ACCOUNT_INACTIVE");
-  if (context.profile.role === "super_admin") throw new AttendanceServiceError("Attendance is available to employee accounts only.", 403, "ROLE_NOT_ALLOWED");
+  if (context.profile.role === "super_admin" || context.profile.role === "company_admin") throw new AttendanceServiceError("Attendance is available to employee accounts only.", 403, "ROLE_NOT_ALLOWED");
   if (context.profile.must_reset_password) {
     throw new AttendanceServiceError("Reset the temporary password before marking attendance.", 403, "PASSWORD_RESET_REQUIRED");
   }

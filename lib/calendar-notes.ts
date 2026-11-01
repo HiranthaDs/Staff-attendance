@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isMigrationRequired } from "@/lib/database-errors";
 import type { CalendarNote } from "@/lib/types";
@@ -57,21 +58,18 @@ async function loadCompatibilityNotes() {
   return notes.filter((note): note is CalendarNote => note !== null);
 }
 
-export async function loadCalendarNotes(input: {
+export async function loadCalendarNotes(client: SupabaseClient, input: {
   startDate: string;
   endDate: string;
   branchId?: string | null;
   includeAllBranches?: boolean;
 }) {
-  const admin = createAdminClient();
-  const [tableResult, compatibilityNotes] = await Promise.all([
-    admin.from("calendar_notes")
+  const tableResult = await client.from("calendar_notes")
       .select("*, branch:branches(id, name, code)")
       .gte("note_date", input.startDate)
       .lte("note_date", input.endDate)
-      .order("note_date"),
-    loadCompatibilityNotes(),
-  ]);
+      .order("note_date");
+  const compatibilityNotes = tableResult.error && isMigrationRequired(tableResult.error) ? await loadCompatibilityNotes() : [];
   const tableNotes = tableResult.error && !isMigrationRequired(tableResult.error)
     ? []
     : (tableResult.data ?? []) as CalendarNote[];

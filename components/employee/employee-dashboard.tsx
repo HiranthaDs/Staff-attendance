@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
@@ -21,7 +21,6 @@ import {
   Palmtree,
   Plus,
   RefreshCw,
-  Sparkles,
   ShieldCheck,
   Timer,
   UserRound,
@@ -104,6 +103,12 @@ export function EmployeeDashboard({
   const [missedAttendance, setMissedAttendance] = useState(initialMissedAttendance);
   const [issueOpen, setIssueOpen] = useState(false);
   const [showDeviceRegistered, setShowDeviceRegistered] = useState(deviceJustRegistered);
+  const dismissAttendanceSuccess = useCallback(() => {
+    setSuccessReceipt(null);
+    setMarkState("idle");
+    setFeedback("");
+    setChecks({});
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -391,9 +396,10 @@ export function EmployeeDashboard({
       {successReceipt && <AttendanceSuccess
         receipt={successReceipt}
         firstName={firstName}
+        branchName={profile.branch?.name || "Assigned office"}
         timezone={profile.branch?.timezone || "Asia/Colombo"}
         scheduledTime={successReceipt.action === "clock_in" ? todaySchedule.arrival_time : todaySchedule.departure_time}
-        onDone={() => { setSuccessReceipt(null); setMarkState("idle"); setFeedback(""); setChecks({}); }}
+        onDone={dismissAttendanceSuccess}
       />}
       {leaveOpen && <LeaveRequestModal onClose={() => setLeaveOpen(false)} onCreated={(leave) => { setLeaves((current) => [leave, ...current]); setLeaveOpen(false); }} />}
       {issueOpen && <IssueReportModal defaultCategory={locationProblem ? "location" : "app"} context={{ feedback, checks, branch: profile.branch?.name, date: today }} onClose={() => setIssueOpen(false)} />}
@@ -458,12 +464,14 @@ function AttendanceError({ message, checks, locationProblem, onClose, onRetry, o
 function AttendanceSuccess({
   receipt,
   firstName,
+  branchName,
   timezone,
   scheduledTime,
   onDone,
 }: {
   receipt: AttendanceSuccessReceipt;
   firstName: string;
+  branchName: string;
   timezone: string;
   scheduledTime: string;
   onDone: () => void;
@@ -473,27 +481,29 @@ function AttendanceSuccess({
   const lateMinutes = isClockIn ? receipt.record.late_minutes : 0;
   const earlyMinutes = !isClockIn ? receipt.record.early_leave_minutes : 0;
   const hasTimingNote = lateMinutes > 0 || earlyMinutes > 0;
-  const message = isClockIn
-    ? lateMinutes > 0
-      ? `${firstName}, your clock-in is safely recorded. A slower start can still become a strong finish.`
-      : `${firstName}, your workday has officially begun and your attendance is safely recorded.`
-    : earlyMinutes > 0
-      ? `${firstName}, your clock-out is safely recorded. Take care, recharge, and come back brighter.`
-      : `${firstName}, your day is safely recorded. Now switch off, breathe out, and enjoy what’s next.`;
+  const message = isClockIn ? `${firstName}, your workday has started.` : `${firstName}, your workday is complete.`;
 
-  return <div className="attendance-success-backdrop" role="presentation" onKeyDown={(event) => event.key === "Escape" && onDone()}><section className={`attendance-success-sheet ${hasTimingNote ? "with-timing-note" : ""}`} role="dialog" aria-modal="true" aria-labelledby="attendance-success-title" aria-describedby="attendance-success-message">
-    <div className="success-confetti" aria-hidden="true"><i /><i /><i /><i /></div>
-    <div className="success-seal" aria-hidden="true"><Check size={39} strokeWidth={3.2} /></div>
-    <span className="success-kicker"><Sparkles size={14} /> Attendance confirmed</span>
-    <h2 id="attendance-success-title">Successful</h2>
-    <p id="attendance-success-message">{message}</p>
-    <div className="success-time-card">
-      <div><span className="success-stat-icon"><Clock3 size={18} /></span><small>{isClockIn ? "Clocked in" : "Clocked out"}</small><strong>{recordedAt ? formatTimeInZone(recordedAt, timezone) : "Recorded"}</strong></div>
-      <div><span className="success-stat-icon"><Timer size={18} /></span><small>Scheduled</small><strong>{formatScheduledTime(scheduledTime)}</strong></div>
+  useEffect(() => {
+    if ("vibrate" in navigator) navigator.vibrate([35, 30, 70]);
+    const timer = window.setTimeout(onDone, 5_200);
+    return () => window.clearTimeout(timer);
+  }, [onDone]);
+
+  return <div className="attendance-success-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onDone()} onKeyDown={(event) => event.key === "Escape" && onDone()}><section className={`attendance-success-sheet apple-attendance-success ${hasTimingNote ? "with-timing-note" : ""}`} role="dialog" aria-modal="true" aria-live="assertive" aria-labelledby="attendance-success-title" aria-describedby="attendance-success-message">
+    <div className="apple-success-topline"><span><i /> Presence</span><small>Attendance</small></div>
+    <div className="apple-success-check" aria-hidden="true"><svg viewBox="0 0 96 96"><circle cx="48" cy="48" r="43" /><path d="M27 49.5 41.5 64 70 34.5" /></svg></div>
+    <div className="apple-success-copy">
+      <span>{isClockIn ? "CLOCK IN CONFIRMED" : "CLOCK OUT CONFIRMED"}</span>
+      <h2 id="attendance-success-title">{isClockIn ? "You’re in" : "You’re all set"}</h2>
+      <p id="attendance-success-message">{message}</p>
     </div>
+    <strong className="apple-success-time">{recordedAt ? formatTimeInZone(recordedAt, timezone) : "Recorded"}</strong>
+    <div className="apple-success-meta"><span><Clock3 size={16} /><small>Recorded</small><strong>{recordedAt ? formatTimeInZone(recordedAt, timezone) : "Now"}</strong></span><span><Timer size={16} /><small>Scheduled</small><strong>{formatScheduledTime(scheduledTime)}</strong></span></div>
+    <div className="apple-success-verified"><ShieldCheck size={20} /><span><strong>Location verified</strong><small>{branchName}</small></span><Check size={18} strokeWidth={3} /></div>
     {lateMinutes > 0 && <div className="success-delay-note"><span><Timer size={18} /></span><div><small>ARRIVAL NOTE</small><strong>{formatDelay(lateMinutes)} later than your allowed arrival time</strong></div><b>{formatDelay(lateMinutes)}</b></div>}
     {earlyMinutes > 0 && <div className="success-delay-note early"><span><Timer size={18} /></span><div><small>DEPARTURE NOTE</small><strong>Clocked out {formatDelay(earlyMinutes)} before schedule</strong></div><b>{formatDelay(earlyMinutes)}</b></div>}
-    <button className="success-done-button" type="button" onClick={onDone} autoFocus>Done <ArrowRight size={18} /></button>
+    <button className="success-done-button apple-success-done" type="button" onClick={onDone} autoFocus>Done</button>
+    <div className="apple-success-autoclose" aria-hidden="true"><span /></div>
   </section></div>;
 }
 

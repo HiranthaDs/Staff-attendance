@@ -96,7 +96,7 @@ VAPID_SUBJECT=mailto:admin@your-domain.example
 CRON_SECRET
 ```
 
-Generate Web Push keys with `npx web-push generate-vapid-keys`. `vercel.json` runs the attendance reminder endpoint every ten minutes; Vercel sends `CRON_SECRET` to protect that endpoint. Welcome/password-reset email uses Resend and remains safely copyable from the administrator receipt if email delivery is not configured.
+Generate Web Push keys with `npx web-push generate-vapid-keys`. On Vercel Hobby, `vercel.json` runs the protected attendance task once per day at 00:05 Asia/Colombo so missed-attendance processing remains automatic. Start- and finish-time reminders need the endpoint called every ten minutes from Vercel Pro or an external scheduler using `Authorization: Bearer <CRON_SECRET>`. Welcome/password-reset email uses Resend and remains safely copyable from the administrator receipt if email delivery is not configured.
 
 Keep `SUPABASE_SECRET_KEY` server-only. Apply every migration before deploying. In Supabase Auth settings, set the production Site URL and add:
 

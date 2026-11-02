@@ -8,7 +8,9 @@ import { createClient } from "@/lib/supabase/client";
 export function IdleSessionGuard() {
   const pathname = usePathname();
   const router = useRouter();
-  const isSuperAdminPortal = pathname === "/super-admin"
+  const isSuperAdminPortal = pathname === "/system-owner"
+    || (pathname.startsWith("/system-owner/") && pathname !== "/system-owner/login")
+    || pathname === "/super-admin"
     || (pathname.startsWith("/super-admin/") && pathname !== "/super-admin/login");
   const isPortal = pathname === "/app" || pathname === "/admin" || pathname === "/profile"
     || pathname.startsWith("/admin/") || isSuperAdminPortal;
@@ -19,7 +21,7 @@ export function IdleSessionGuard() {
     let active = true;
     const { data: listener } = client.auth.onAuthStateChange((event) => {
       if (active && event === "SIGNED_OUT") {
-        router.replace(isSuperAdminPortal ? "/super-admin/login?error=session_expired" : "/login?error=session_expired");
+        router.replace(isSuperAdminPortal ? "/system-owner/login?error=session_expired" : "/login?error=session_expired");
       }
     });
     const resume = async () => {

@@ -9,7 +9,7 @@ import type { AttendanceRecord, LeaveRequest, PayrollRecord, SalarySettings } fr
 
 export default async function ProfilePage() {
   const profile = await requireProfile();
-  if (profile.role === "super_admin") redirect("/super-admin");
+  if (profile.role === "super_admin") redirect("/system-owner");
   if (profile.role === "company_admin") redirect("/admin");
   const supabase = await createClient();
   const today = localDateParts(new Date(), profile.branch?.timezone || "Asia/Colombo").date;

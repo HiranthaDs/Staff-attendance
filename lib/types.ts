@@ -4,6 +4,15 @@ export type EmploymentType = "probation" | "permanent" | "contract" | "temporary
 export type Organization = {
   id: string;
   name: string;
+  legal_name?: string | null;
+  registration_number?: string | null;
+  industry?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  address?: string | null;
+  city?: string | null;
+  country?: string;
+  timezone?: string;
   slug: string;
   billing_email: string;
   plan: "starter" | "growth" | "scale" | "enterprise";

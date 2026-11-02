@@ -2,13 +2,14 @@ import { createInterface } from "node:readline";
 import { createClient } from "@supabase/supabase-js";
 
 const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-process.stdout.write("Initial super-admin password: ");
+process.stdout.write("Initial system-owner password: ");
 rl._writeToOutput = () => {};
 const password = await new Promise((resolve) => rl.question("", resolve));
 rl.close();
 process.stdout.write("\n");
 
-const email = "hiranthadiass4@gmail.com";
+const email = process.env.PLATFORM_OWNER_EMAIL?.trim().toLowerCase();
+if (!email) throw new Error("PLATFORM_OWNER_EMAIL is required.");
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
@@ -47,10 +48,11 @@ const { error: profileError } = await supabase.from("profiles").upsert({
   email,
   full_name: user.user_metadata?.full_name || "Hirantha Dias",
   role: "super_admin",
+  organization_id: null,
   branch_id: null,
-  job_title: "Super administrator",
+  job_title: "System owner",
   must_reset_password: true,
   active: true,
 });
 if (profileError) throw profileError;
-process.stdout.write("\nSuper-admin account is ready.\n");
+process.stdout.write("\nSystem-owner account is ready.\n");

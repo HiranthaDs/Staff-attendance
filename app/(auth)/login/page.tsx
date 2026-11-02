@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { LoginForm } from "@/components/auth/login-form";
 
-export const metadata: Metadata = { title: "Sign in" };
+export const metadata: Metadata = {
+  title: "Company sign in",
+  description: "Sign in to your company workspace as a super admin, branch administrator, or employee.",
+  robots: { index: false, follow: false, noarchive: true },
+};
 
 export default async function LoginPage({
   searchParams,

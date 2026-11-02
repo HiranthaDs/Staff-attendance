@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     kind: "system",
     title: "Presence notifications are ready",
     body: "You will receive important attendance, leave and calendar updates on this device.",
-    actionUrl: actor.profile.role === "super_admin" ? "/super-admin" : actor.profile.role === "company_admin" || actor.profile.role === "branch_admin" ? "/admin" : "/app",
+    actionUrl: actor.profile.role === "super_admin" ? "/system-owner" : actor.profile.role === "company_admin" || actor.profile.role === "branch_admin" ? "/admin" : "/app",
     dedupeKey: `test:${actor.user.id}:${Date.now()}`,
   });
   return NextResponse.json({ success: true, delivery });

@@ -85,8 +85,8 @@ const capabilities = [
 ];
 
 const roles = [
-  { label: "Platform", title: "Super admin", text: "Controls companies, plans, capacity, owner access, platform activity, public holidays and support hotlines." },
-  { label: "Company", title: "Company owner", text: "Runs branches, employees, schedules, leave, attendance, payroll, exports and company settings." },
+  { label: "Platform", title: "System owner", text: "Controls companies, capacity, platform activity, broadcasts, public holidays and support hotlines." },
+  { label: "Company", title: "Company super admin", text: "Runs branches, employees, schedules, leave, attendance, payroll, exports and company settings." },
   { label: "Branch", title: "Branch admin", text: "Supports assigned branch operations and staff within the permissions granted by the company." },
   { label: "Personal", title: "Employee", text: "Clocks in and out, reviews their calendar, requests leave, receives alerts and manages their own profile." },
 ];
@@ -103,12 +103,12 @@ const securityPoints = [
 
 const faq = [
   {
-    question: "Where do employees sign in?",
-    answer: "Employees do not need to use this homepage. Each company has a personalized sign-in URL that the company owner sends directly to staff. After sign-in, Presence routes them straight to their employee portal.",
+    question: "Where do company super admins and employees sign in?",
+    answer: "Existing company super admins and employees use Company sign in or their personalized company URL. A new company super admin can choose Create company account, enter the company details, and create both the workspace and administrator login together.",
   },
   {
-    question: "Is the super-admin login separate?",
-    answer: "Yes. The platform super admin uses the dedicated platform login. Company owners, branch administrators and employees use their company sign-in page instead.",
+    question: "Is the system-owner login separate?",
+    answer: "Yes. The system owner uses a dedicated private portal. Company super admins, branch administrators and employees use their company sign-in page instead.",
   },
   {
     question: "How is attendance verified?",
@@ -168,9 +168,12 @@ function HomePage() {
           <a href="#security">Security</a>
           <a href="#faq">FAQ</a>
         </nav>
-        <Link className="button button-dark home-header-login" href="/super-admin/login">
-          Super admin login <ArrowRight size={16} />
-        </Link>
+        <div className="home-header-actions">
+          <Link className="home-header-company-login" href="/login">Company sign in</Link>
+          <Link className="button button-dark home-header-login" href="/signup">
+            Create company <ArrowRight size={16} />
+          </Link>
+        </div>
       </header>
 
       <section className="home-hero">
@@ -179,10 +182,10 @@ function HomePage() {
           <h1>Every company.<br /><em>One clear</em> workday.</h1>
           <p>Presence brings company setup, location-verified attendance, leave, schedules, payroll and staff communication into one secure platform.</p>
           <div className="home-hero-actions">
-            <Link className="button button-primary button-lg" href="/super-admin/login">
-              Sign in as super admin <ArrowRight size={18} />
+            <Link className="button button-primary button-lg" href="/signup">
+              Create company account <ArrowRight size={18} />
             </Link>
-            <a className="button button-ghost button-lg" href="#capabilities">Explore the platform</a>
+            <Link className="button button-ghost button-lg" href="/login">Company super-admin sign in</Link>
           </div>
           <div className="home-hero-trust" aria-label="Platform highlights">
             <span><Check size={15} /> Direct company login links</span>
@@ -237,12 +240,13 @@ function HomePage() {
         <div>
           <span className="eyebrow">A SHORTER PATH FOR STAFF</span>
           <h2 id="direct-access-title">Employees go straight to their company login.</h2>
-          <p>The super admin creates the company, then the company owner sends each employee the personalized sign-in link. Staff do not need a homepage or a platform-level login.</p>
+          <p>The system owner creates the company and its super admin, then that company super admin sends each employee the personalized sign-in link. Staff do not need a platform-level login.</p>
         </div>
         <div className="home-link-example" aria-label="Example company login flow">
           <span>Company sign-in link</span>
           <strong>presence.app/login/your-company</strong>
           <small><Check size={13} /> Direct to the correct workspace</small>
+          <Link href="/login">Sign in without a company link <ArrowRight size={13} /></Link>
         </div>
       </section>
 
@@ -319,17 +323,20 @@ function HomePage() {
 
       <section className="home-final-cta">
         <div>
-          <span className="eyebrow">PLATFORM ACCESS</span>
+          <span className="eyebrow">SECURE ACCESS</span>
           <h2>Ready to manage the next workday?</h2>
-          <p>Enter the secure platform portal to create companies, invite owners and oversee operations.</p>
+          <p>Company super admins and staff enter their workspace, while the system owner keeps a separate protected portal.</p>
         </div>
-        <Link className="button button-dark button-lg" href="/super-admin/login">Super admin login <ArrowRight size={18} /></Link>
+        <div className="home-final-actions">
+          <Link className="button button-primary button-lg" href="/signup">Create company account <ArrowRight size={18} /></Link>
+          <Link className="button button-dark button-lg" href="/login">Company super-admin sign in</Link>
+        </div>
       </section>
 
       <footer className="home-footer">
         <Brand />
         <p>Secure attendance and workforce clarity for every office.</p>
-        <div><a href="#capabilities">Capabilities</a><a href="#security">Security</a><Link href="/super-admin/login">Platform login</Link></div>
+        <div><a href="#capabilities">Capabilities</a><a href="#security">Security</a><Link href="/signup">Create company</Link><Link href="/login">Company sign in</Link><Link href="/system-owner/login">System owner</Link></div>
       </footer>
     </main>
   );
@@ -339,11 +346,11 @@ export default async function Home() {
   const profile = await getCurrentProfile().catch(() => null);
 
   if (profile) {
-    const loginPath = profile.role === "super_admin" ? "/super-admin/login" : "/login";
+    const loginPath = profile.role === "super_admin" ? "/system-owner/login" : "/login";
     if (!profile.active) redirect(`${loginPath}?error=account_disabled`);
     if (profile.organization && profile.organization.status !== "active") redirect("/login?error=company_suspended");
     if (profile.must_reset_password) redirect("/auth/update-password");
-    redirect(profile.role === "super_admin" ? "/super-admin" : profile.role === "company_admin" || profile.role === "branch_admin" ? "/admin" : "/app");
+    redirect(profile.role === "super_admin" ? "/system-owner" : profile.role === "company_admin" || profile.role === "branch_admin" ? "/admin" : "/app");
   }
 
   return <HomePage />;

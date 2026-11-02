@@ -14,6 +14,7 @@ import {
   verifyOrRegisterStaffDevice,
 } from "@/lib/staff-device-security";
 import { createClient } from "@/lib/supabase/server";
+import { isPlatformOwnerEmail } from "@/lib/platform-owner";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ const schema = z.object({
   email: z.string().trim().email().max(254),
   password: z.string().min(1).max(128),
   workspace: z.string().trim().toLowerCase().min(3).max(50).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/).optional(),
-  portal: z.enum(["company", "platform"]).default("company"),
+  portal: z.enum(["company", "platform", "owner"]).default("company"),
   device: z.object({
     id: z.string().uuid(),
     secret: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
@@ -29,7 +30,7 @@ const schema = z.object({
   }).optional(),
   deviceEnrollmentCode: z.string().trim().min(8).max(40).optional(),
 }).superRefine((value, context) => {
-  if (value.portal === "platform" && value.workspace) {
+  if (value.portal !== "company" && value.workspace) {
     context.addIssue({ code: "custom", path: ["workspace"], message: "Platform access cannot use a company workspace." });
   }
 });
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
     return json({ error: "Enter a valid email address and password." }, 400);
   }
 
-  const isPlatformPortal = parsed.data.portal === "platform";
+  const isPlatformPortal = parsed.data.portal === "platform" || parsed.data.portal === "owner";
   const securityContext = isPlatformPortal
     ? createPlatformLoginContext(request, parsed.data.email)
     : null;
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("role, active, must_reset_password, organization_id, organization:organizations(status,slug)")
+      .select("email,role,active,must_reset_password,organization_id,organization:organizations(status,slug)")
       .eq("id", data.user.id)
       .single();
 
@@ -111,14 +112,14 @@ export async function POST(request: Request) {
       await audit("account_disabled", data.user.id);
       return json({ error: "This account has been disabled." }, 403);
     }
-    if (isPlatformPortal && (profile.role !== "super_admin" || profile.organization_id !== null)) {
+    if (isPlatformPortal && (profile.role !== "super_admin" || profile.organization_id !== null || !isPlatformOwnerEmail(profile.email))) {
       await supabase.auth.signOut();
       await audit("role_denied", data.user.id);
-      return json({ error: "This sign-in page is only for platform super administrators. Use company sign in instead." }, 403);
+      return json({ error: "This private sign-in page is only for the system owner. Use company sign in instead." }, 403);
     }
     if (!isPlatformPortal && profile.role === "super_admin") {
       await supabase.auth.signOut();
-      return json({ error: "Platform administrators must use the dedicated super-admin sign-in page." }, 403);
+      return json({ error: "The system owner must use the dedicated private sign-in page." }, 403);
     }
     const organization = Array.isArray(profile.organization) ? profile.organization[0] : profile.organization;
     if (parsed.data.workspace && organization?.slug !== parsed.data.workspace) {
@@ -165,7 +166,7 @@ export async function POST(request: Request) {
     const redirectTo = profile.must_reset_password
       ? "/auth/update-password"
       : profile.role === "super_admin"
-        ? "/super-admin"
+        ? "/system-owner"
         : profile.role === "company_admin" || profile.role === "branch_admin" ? "/admin" : "/app";
     await audit("success", data.user.id);
     const response = json({ success: true, redirectTo, deviceStatus: deviceDecision?.status ?? null });

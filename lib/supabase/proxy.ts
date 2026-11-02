@@ -8,7 +8,9 @@ export async function updateSession(request: NextRequest) {
   const isPublic =
     pathname === "/" ||
     pathname.startsWith("/login") ||
+    pathname === "/signup" ||
     pathname === "/super-admin/login" ||
+    pathname === "/system-owner/login" ||
     pathname === "/about" ||
     pathname === "/offline" ||
     pathname === "/robots.txt" ||
@@ -17,6 +19,7 @@ export async function updateSession(request: NextRequest) {
     pathname === "/auth/callback" ||
     pathname === "/auth/update-password" ||
     pathname === "/api/auth/login" ||
+    pathname === "/api/company-signup" ||
     pathname === "/api/health" ||
     pathname.startsWith("/branch-setup/") ||
     pathname.startsWith("/join/") ||
@@ -60,8 +63,8 @@ export async function updateSession(request: NextRequest) {
 
   if (!hasClaims && !pathname.startsWith("/_next")) {
     const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = pathname === "/super-admin" || pathname.startsWith("/super-admin/")
-      ? "/super-admin/login"
+    loginUrl.pathname = pathname === "/system-owner" || pathname.startsWith("/system-owner/") || pathname === "/super-admin" || pathname.startsWith("/super-admin/")
+      ? "/system-owner/login"
       : "/login";
     loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);

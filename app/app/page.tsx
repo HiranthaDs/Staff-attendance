@@ -14,7 +14,7 @@ export default async function EmployeePage({
   searchParams: Promise<{ device?: string | string[] }>;
 }) {
   const profile = await requireProfile();
-  if (profile.role === "super_admin") redirect("/super-admin");
+  if (profile.role === "super_admin") redirect("/system-owner");
   if (profile.role === "company_admin") redirect("/admin");
   const supabase = await createClient();
   const timezone = profile.branch?.timezone || "Asia/Colombo";

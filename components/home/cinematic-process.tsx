@@ -26,7 +26,7 @@ const scenes = [
     number: "01",
     label: "Platform access",
     title: "The operator enters through a dedicated security boundary.",
-    text: "Presence verifies the Supabase session, active profile and super-admin role before any platform data is loaded.",
+    text: "Presence verifies the Supabase session, active profile and system-owner identity before any platform data is loaded.",
   },
   {
     number: "02",
@@ -37,7 +37,7 @@ const scenes = [
   {
     number: "03",
     label: "Secure handoff",
-    title: "The company owner receives a one-time activation path.",
+    title: "The company super admin receives a one-time activation path.",
     text: "The invitation expires, can only be used once and never carries a password. The owner chooses their own credentials.",
   },
   {

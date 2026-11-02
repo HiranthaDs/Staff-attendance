@@ -12,7 +12,7 @@ type LoginFormProps = {
   initialEmail?: string;
   workspaceSlug?: string;
   workspaceName?: string;
-  portal?: "company" | "platform";
+  portal?: "company" | "platform" | "owner";
 };
 
 export function LoginForm({
@@ -24,7 +24,8 @@ export function LoginForm({
   portal = "company",
 }: LoginFormProps) {
   const router = useRouter();
-  const isPlatformPortal = portal === "platform";
+  const isOwnerPortal = portal === "owner";
+  const isPlatformPortal = portal === "platform" || isOwnerPortal;
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -71,7 +72,7 @@ export function LoginForm({
           email: email.trim().toLowerCase(),
           password,
           workspace: workspaceSlug || undefined,
-          portal: isPlatformPortal ? "platform" : "company",
+          portal: isOwnerPortal ? "owner" : isPlatformPortal ? "platform" : "company",
           device,
           deviceEnrollmentCode: deviceEnrollmentRequired ? deviceEnrollmentCode : undefined,
         }),
@@ -109,10 +110,10 @@ export function LoginForm({
   return (
     <div className={`auth-form-wrap${isPlatformPortal ? " auth-form-platform" : ""}`}>
       <div className="auth-heading">
-        {isPlatformPortal && <span className="auth-security-badge"><ShieldCheck size={14} /> Protected platform access</span>}
-        <span className="eyebrow">{isPlatformPortal ? "SUPER ADMIN PORTAL" : workspaceName ? `${workspaceName.toUpperCase()} PORTAL` : "WELCOME BACK"}</span>
-        <h2>{isPlatformPortal ? "Manage the platform" : workspaceName ? `Sign in to ${workspaceName}` : "Sign in to your workspace"}</h2>
-        <p>{isPlatformPortal ? "Use your dedicated platform account. Company accounts are intentionally blocked from this portal." : workspaceName ? "This secure link accepts accounts belonging to this company." : "Use the account provided by your administrator."}</p>
+        {isPlatformPortal && <span className="auth-security-badge"><ShieldCheck size={14} /> {isOwnerPortal ? "Private system-owner access" : "Protected platform access"}</span>}
+        <span className="eyebrow">{isOwnerPortal ? "SYSTEM OWNER PORTAL" : isPlatformPortal ? "PLATFORM PORTAL" : workspaceName ? `${workspaceName.toUpperCase()} PORTAL` : "COMPANY ACCESS"}</span>
+        <h2>{isOwnerPortal ? "Run the entire platform" : isPlatformPortal ? "Manage the platform" : workspaceName ? `Sign in to ${workspaceName}` : "Sign in to your company"}</h2>
+        <p>{isOwnerPortal ? "Reserved for the system builder. Company super admins and employees cannot sign in here." : isPlatformPortal ? "Use your dedicated platform account. Company accounts are intentionally blocked from this portal." : workspaceName ? "This secure link accepts accounts belonging to this company." : "Company super admins, branch administrators, and employees can sign in here with their activated account."}</p>
       </div>
       <form onSubmit={submit} className="stack-lg" aria-busy={loading} noValidate={false}>
         <label className="field">
@@ -144,14 +145,18 @@ export function LoginForm({
       {isPlatformPortal ? (
         <div className="auth-portal-switch">
           <ShieldCheck size={18} />
-          <p><span>Company administrator or employee?</span><Link href="/login">Go to company sign in</Link></p>
+          <p><span>Company super admin or employee?</span><Link href="/login">Go to company sign in</Link></p>
         </div>
       ) : workspaceName ? (
         <p className="auth-help">Need access? Contact your office administrator.</p>
       ) : (
-        <div className="auth-portal-switch">
-          <ShieldCheck size={18} />
-          <p><span>Platform administrator?</span><Link href="/super-admin/login">Super admin sign in</Link></p>
+        <div className="auth-entry-help">
+          <p><span>New company super admin?</span> Create your company and administrator account, or use the private activation link sent by the system owner.</p>
+          <Link className="button button-primary button-full" href="/signup">Create company super-admin account <ArrowRight size={16} /></Link>
+          <div className="auth-portal-switch">
+            <ShieldCheck size={18} />
+            <p><span>System owner?</span><Link href="/system-owner/login">Use the private owner portal</Link></p>
+          </div>
         </div>
       )}
     </div>

@@ -102,7 +102,7 @@ export function AdminDashboard({ admin, today, initialBranches, initialStaff, at
         {isSuperAdmin && <NavButton active={tab === "setup"} icon={<Link2 />} label="Branch setup" count={initialSetupSubmissions.filter((item) => !item.created_branch_id).length || undefined} onClick={() => navigate("setup")} />}
       </nav>
       <div className="side-nav secondary"><button className={tab === "settings" ? "active" : ""} onClick={() => navigate("settings")}><Settings size={19} /><span>Settings</span></button><button onClick={() => navigate("settings")}><HelpCircle size={19} /><span>Help & setup</span></button></div>
-      <div className="sidebar-user"><ProfileAvatar id={admin.id} name={admin.full_name} avatarPath={admin.avatar_path} className="avatar-sm" /><div><strong>{admin.full_name}</strong><small>{isSuperAdmin ? "Company owner" : "Branch administrator"}</small></div><button onClick={logout}><LogOut size={17} /></button></div>
+      <div className="sidebar-user"><ProfileAvatar id={admin.id} name={admin.full_name} avatarPath={admin.avatar_path} className="avatar-sm" /><div><strong>{admin.full_name}</strong><small>{isSuperAdmin ? "Company super admin" : "Branch administrator"}</small></div><button onClick={logout}><LogOut size={17} /></button></div>
     </aside>
     {sidebarOpen && <button className="sidebar-scrim" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
 
@@ -110,7 +110,7 @@ export function AdminDashboard({ admin, today, initialBranches, initialStaff, at
       <header className="admin-topbar">
         <button className="menu-button" onClick={() => setSidebarOpen(true)}><Menu size={22} /></button>
         <div className="admin-search"><Search size={18} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search people, branches or records…" /></div>
-        <div className="topbar-actions"><NotificationCenter /><span className="topbar-divider" /><div className="topbar-user"><ProfileAvatar id={admin.id} name={admin.full_name} avatarPath={admin.avatar_path} className="avatar-sm" /><div><strong>{admin.full_name}</strong><small>{isSuperAdmin ? "Company owner" : "Branch admin"}</small></div></div></div>
+        <div className="topbar-actions"><NotificationCenter /><span className="topbar-divider" /><div className="topbar-user"><ProfileAvatar id={admin.id} name={admin.full_name} avatarPath={admin.avatar_path} className="avatar-sm" /><div><strong>{admin.full_name}</strong><small>{isSuperAdmin ? "Company super admin" : "Branch admin"}</small></div></div></div>
       </header>
 
       <div className="admin-content">

@@ -7,6 +7,15 @@ import { sendInvitationEmail } from "@/lib/email";
 
 const createSchema = z.object({
   name: z.string().trim().min(2).max(120),
+  legal_name: z.string().trim().min(2).max(160),
+  registration_number: z.string().trim().min(2).max(80).regex(/^[A-Za-z0-9 .\/-]+$/),
+  industry: z.string().trim().min(2).max(100),
+  company_phone: z.string().trim().min(7).max(30),
+  website: z.union([z.literal(""), z.string().trim().url().max(240)]).default(""),
+  address: z.string().trim().min(4).max(300),
+  city: z.string().trim().min(2).max(100),
+  country: z.string().trim().min(2).max(100).default("Sri Lanka"),
+  timezone: z.string().trim().min(3).max(80).default("Asia/Colombo"),
   slug: z.string().trim().toLowerCase().min(3).max(50).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/),
   billing_email: z.string().trim().email().max(254),
   plan: z.enum(["starter", "growth", "scale", "enterprise"]).default("growth"),
@@ -14,6 +23,7 @@ const createSchema = z.object({
   owner_name: z.string().trim().min(2).max(100),
   owner_email: z.string().trim().email().max(254),
   owner_phone: z.string().trim().min(7).max(30),
+  owner_job_title: z.string().trim().min(2).max(100).default("Company super admin"),
   expires_in_days: z.coerce.number().int().min(1).max(14).default(7),
 });
 
@@ -32,16 +42,27 @@ export async function POST(request: Request) {
   const input = parsed.data;
   const email = input.owner_email.toLowerCase();
 
-  const [{ data: existingSlug }, { data: existingOwner }, { data: pendingOwner }] = await Promise.all([
+  const [{ data: existingSlug }, { data: existingRegistration }, { data: existingOwner }, { data: pendingOwner }] = await Promise.all([
     actor.serviceAdmin.from("organizations").select("id").eq("slug", input.slug).limit(1),
+    actor.serviceAdmin.from("organizations").select("id").ilike("registration_number", input.registration_number).limit(1),
     actor.serviceAdmin.from("profiles").select("id").eq("email", email).limit(1),
     actor.serviceAdmin.from("organization_invitations").select("id").eq("invited_email", email).eq("status", "pending").limit(1),
   ]);
   if (existingSlug?.length) return NextResponse.json({ error: "That company URL is already in use." }, { status: 409 });
+  if (existingRegistration?.length) return NextResponse.json({ error: "That company registration number is already in use." }, { status: 409 });
   if (existingOwner?.length || pendingOwner?.length) return NextResponse.json({ error: "That owner email already has an account or pending invitation." }, { status: 409 });
 
   const { data: organization, error: organizationError } = await actor.serviceAdmin.from("organizations").insert({
     name: input.name,
+    legal_name: input.legal_name,
+    registration_number: input.registration_number,
+    industry: input.industry,
+    phone: input.company_phone,
+    website: input.website || null,
+    address: input.address,
+    city: input.city,
+    country: input.country,
+    timezone: input.timezone,
     slug: input.slug,
     billing_email: input.billing_email.toLowerCase(),
     plan: input.plan,
@@ -49,7 +70,8 @@ export async function POST(request: Request) {
     created_by: actor.user.id,
   }).select("*").single();
   if (organizationError || !organization) {
-    return NextResponse.json({ error: organizationError?.code === "23505" ? "That company URL is already in use." : "The company workspace could not be created." }, { status: organizationError?.code === "23505" ? 409 : 500 });
+    const duplicateRegistration = organizationError?.code === "23505" && organizationError.message.toLowerCase().includes("registration");
+    return NextResponse.json({ error: organizationError?.code === "23505" ? duplicateRegistration ? "That company registration number is already in use." : "That company URL is already in use." : "The company workspace could not be created." }, { status: organizationError?.code === "23505" ? 409 : 500 });
   }
   await actor.serviceAdmin.from("payroll_preferences").insert({ organization_id: organization.id, id: true, cycle_start_day: 15 });
 
@@ -62,7 +84,7 @@ export async function POST(request: Request) {
     role: "company_admin",
     full_name: input.owner_name,
     phone: input.owner_phone,
-    job_title: "Company owner",
+    job_title: input.owner_job_title,
     token_hash: tokenHash,
     expires_at: expiresAt,
     created_by: actor.user.id,
@@ -81,7 +103,7 @@ export async function POST(request: Request) {
     organizationName: organization.name,
     invitationLink: link,
     loginLink,
-    roleLabel: "company owner",
+    roleLabel: "company super admin",
     expiresAt,
   });
   return NextResponse.json({ organization, invitation, link, loginLink, email: emailDelivery }, { status: 201 });

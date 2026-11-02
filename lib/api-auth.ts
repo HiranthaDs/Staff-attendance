@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyCurrentStaffDevice } from "@/lib/staff-device-security";
+import { isPlatformOwnerProfile } from "@/lib/platform-owner";
 import type { Profile } from "@/lib/types";
 
 export async function getApiActor() {
@@ -51,8 +52,10 @@ export async function getApiAdmin() {
 export async function getApiSuperAdmin() {
   const result = await getApiActor();
   if ("error" in result) return result;
-  if (result.profile.role !== "super_admin") {
-    return { error: NextResponse.json({ error: "Platform super administrator access required." }, { status: 403 }) };
+  if (!isPlatformOwnerProfile(result.profile)) {
+    return { error: NextResponse.json({ error: "System-owner access required." }, { status: 403 }) };
   }
   return result;
 }
+
+export const getApiSystemOwner = getApiSuperAdmin;

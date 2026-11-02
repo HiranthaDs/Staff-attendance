@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { verifyCurrentStaffDevice } from "@/lib/staff-device-security";
+import { isPlatformOwnerProfile } from "@/lib/platform-owner";
 import type { Profile } from "@/lib/types";
 
 export async function getCurrentProfile(): Promise<Profile | null> {
@@ -31,12 +32,14 @@ export async function requireProfile(loginPath = "/login") {
 
 export async function requireAdmin() {
   const profile = await requireProfile();
-  if (profile.role !== "company_admin" && profile.role !== "branch_admin") redirect(profile.role === "super_admin" ? "/super-admin" : "/app");
+  if (profile.role !== "company_admin" && profile.role !== "branch_admin") redirect(profile.role === "super_admin" ? "/system-owner" : "/app");
   return profile;
 }
 
 export async function requireSuperAdmin() {
-  const profile = await requireProfile("/super-admin/login");
-  if (profile.role !== "super_admin") redirect(profile.role === "company_admin" || profile.role === "branch_admin" ? "/admin" : "/app");
+  const profile = await requireProfile("/system-owner/login");
+  if (!isPlatformOwnerProfile(profile)) redirect(profile.role === "company_admin" || profile.role === "branch_admin" ? "/admin" : "/app");
   return profile;
 }
+
+export const requireSystemOwner = requireSuperAdmin;

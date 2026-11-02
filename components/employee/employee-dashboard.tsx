@@ -17,6 +17,7 @@ import {
   LifeBuoy,
   MapPin,
   MessageSquareWarning,
+  MonitorSmartphone,
   Palmtree,
   Plus,
   RefreshCw,
@@ -72,6 +73,7 @@ export function EmployeeDashboard({
   holidays,
   workSchedule,
   missedAttendance: initialMissedAttendance,
+  deviceJustRegistered,
 }: {
   profile: Profile;
   initialNow: string;
@@ -84,6 +86,7 @@ export function EmployeeDashboard({
   holidays: CompanyHoliday[];
   workSchedule: WorkScheduleDay[];
   missedAttendance: MissedAttendance[];
+  deviceJustRegistered: boolean;
 }) {
   const router = useRouter();
   const [todayRecord, setTodayRecord] = useState(initialTodayRecord);
@@ -100,6 +103,7 @@ export function EmployeeDashboard({
   const [successReceipt, setSuccessReceipt] = useState<AttendanceSuccessReceipt | null>(null);
   const [missedAttendance, setMissedAttendance] = useState(initialMissedAttendance);
   const [issueOpen, setIssueOpen] = useState(false);
+  const [showDeviceRegistered, setShowDeviceRegistered] = useState(deviceJustRegistered);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -296,6 +300,8 @@ export function EmployeeDashboard({
         </section>
 
         {profile.must_reset_password && <div className="security-banner"><ShieldCheck size={22} /><div><strong>Secure your account</strong><span>Replace the temporary password before marking attendance.</span></div><Link href="/auth/update-password">Change now <ArrowRight size={16} /></Link></div>}
+        {showDeviceRegistered && <div className="device-registered-banner"><MonitorSmartphone size={22} /><div><strong>This browser is now registered for your attendance account.</strong><span>Other devices cannot sign in or mark attendance unless the super admin resets your registration.</span></div><button onClick={() => { setShowDeviceRegistered(false); router.replace("/app", { scroll: false }); }} aria-label="Dismiss device registration message"><X size={17} /></button></div>}
+        {todayRecord?.clock_in && !todayRecord.clock_out && <div className="clocked-in-logout-warning"><ShieldCheck size={20} /><div><strong>You are currently clocked in.</strong><span>Signing out from your profile will record the current time as an unverified departure. Use Clock out for a location-verified finish.</span></div></div>}
         {missedAttendance.length > 0 && <section className="missed-attendance-alert"><span><MessageSquareWarning size={22} /></span><div><small>MISSED ATTENDANCE</small><strong>You missed marking attendance on {format(parseISO(missedAttendance[0].attendance_date), "EEEE, d MMMM")}.</strong><p>The day is recorded as {missedAttendance[0].absence_units} absent unit with 0 worked hours. Contact your administrator if this should be leave.</p></div><button onClick={() => void acknowledgeMissedAttendance(missedAttendance[0].id)}>I understand</button></section>}
 
         <section className={`clock-card ${markState}`}>

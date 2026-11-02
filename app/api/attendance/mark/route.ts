@@ -6,6 +6,7 @@ import {
   callAttendanceBackend,
   isTrustedMutationOrigin,
 } from "@/lib/attendance-backend";
+import { verifyStaffDeviceRequest } from "@/lib/staff-device-security";
 
 export const runtime = "nodejs";
 
@@ -43,6 +44,13 @@ export async function POST(request: Request) {
   if (actor.profile.role === "super_admin" || actor.profile.role === "company_admin") {
     return NextResponse.json({ error: "Only employee accounts can mark attendance." }, { status: 403 });
   }
+  const device = await verifyStaffDeviceRequest({
+    request,
+    userId: actor.user.id,
+    context: "attendance_mark",
+    serviceAdmin: actor.serviceAdmin,
+  });
+  if (!device.allowed) return device.response;
   if (actor.profile.must_reset_password) {
     return NextResponse.json({ error: "Change your temporary password before marking attendance." }, { status: 403 });
   }

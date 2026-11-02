@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { verifyCurrentStaffDevice } from "@/lib/staff-device-security";
 import type { Profile } from "@/lib/types";
 
 export async function getApiActor() {
@@ -23,6 +24,13 @@ export async function getApiActor() {
 
   if (profile.organization && profile.organization.status !== "active") {
     return { error: NextResponse.json({ error: "This company workspace is suspended." }, { status: 403 }) };
+  }
+
+  if ((profile.role === "staff" || profile.role === "branch_admin") && !await verifyCurrentStaffDevice(data.user.id)) {
+    return { error: NextResponse.json({
+      error: "This attendance account is not authorized on this device.",
+      code: "device_verification_failed",
+    }, { status: 403, headers: { "cache-control": "no-store" } }) };
   }
 
   // Database work uses the caller's session so PostgreSQL RLS remains the final tenant boundary.

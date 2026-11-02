@@ -8,15 +8,19 @@ import { createClient } from "@/lib/supabase/client";
 export function IdleSessionGuard() {
   const pathname = usePathname();
   const router = useRouter();
+  const isSuperAdminPortal = pathname === "/super-admin"
+    || (pathname.startsWith("/super-admin/") && pathname !== "/super-admin/login");
   const isPortal = pathname === "/app" || pathname === "/admin" || pathname === "/profile"
-    || pathname === "/super-admin" || pathname.startsWith("/admin/") || pathname.startsWith("/super-admin/");
+    || pathname.startsWith("/admin/") || isSuperAdminPortal;
 
   useEffect(() => {
     if (!isPortal) return;
     const client = createClient();
     let active = true;
     const { data: listener } = client.auth.onAuthStateChange((event) => {
-      if (active && event === "SIGNED_OUT") router.replace("/login?error=session_expired");
+      if (active && event === "SIGNED_OUT") {
+        router.replace(isSuperAdminPortal ? "/super-admin/login?error=session_expired" : "/login?error=session_expired");
+      }
     });
     const resume = async () => {
       if (document.visibilityState !== "visible" || !navigator.onLine) return;
@@ -34,7 +38,7 @@ export function IdleSessionGuard() {
       document.removeEventListener("visibilitychange", resume);
       window.removeEventListener("online", resume);
     };
-  }, [isPortal, router]);
+  }, [isPortal, isSuperAdminPortal, router]);
 
   return null;
 }

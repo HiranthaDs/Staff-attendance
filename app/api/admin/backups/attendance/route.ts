@@ -86,7 +86,7 @@ export async function GET(request: Request) {
   const lines = [
     ["PRESENCE ATTENDANCE LEDGER"], ["Branch", branchNames], ["Branch code", branchCodes],
     ["Reporting period", periodLabel], ["From", parsed.data.start, "To", parsed.data.end], ["Generated at", new Date().toISOString()], [],
-    ["Branch", "Branch code", "Month", "Date", "Day", "Employee", "Employee code", "Email", "Schedule", "Scheduled arrival", "Scheduled departure", "Scheduled hours", "Day result", "Attendance status", "Clock in", "Clock out", "Worked hours", "Late minutes", "Early leave minutes", "Leave type", "Leave portion", "Leave days", "Leave reason", "Leave admin note", "Holiday", "Holiday type", "Holiday source", "Clock-in distance (m)", "Clock-out distance (m)"],
+    ["Branch", "Branch code", "Month", "Date", "Day", "Employee", "Employee code", "Email", "Schedule", "Scheduled arrival", "Scheduled departure", "Scheduled hours", "Day result", "Attendance status", "Clock in", "Clock out", "Clock-out source", "Worked hours", "Late minutes", "Early leave minutes", "Leave type", "Leave portion", "Leave days", "Leave reason", "Leave admin note", "Holiday", "Holiday type", "Holiday source", "Clock-in distance (m)", "Clock-out distance (m)"],
   ].map((row) => row.map(csvCell).join(","));
 
   for (const profile of profiles) {
@@ -105,7 +105,7 @@ export async function GET(request: Request) {
         new Intl.DateTimeFormat("en", { timeZone: "UTC", weekday: "long" }).format(new Date(`${date}T12:00:00Z`)),
         profile.full_name, profile.employee_code, profile.email, ledger.schedule.day_type.replaceAll("_", " "),
         ledger.schedule.arrival_time.slice(0, 5), ledger.schedule.departure_time.slice(0, 5), `${Math.floor(scheduledMinutes / 60)}:${String(scheduledMinutes % 60).padStart(2, "0")}`,
-        workdayStatusLabel(ledger.status), record?.status, clockTime(record?.clock_in ?? null, timezone), clockTime(record?.clock_out ?? null, timezone),
+        workdayStatusLabel(ledger.status), record?.status, clockTime(record?.clock_in ?? null, timezone), clockTime(record?.clock_out ?? null, timezone), record?.clock_out_source === "logout" ? "Logout (unverified)" : record?.clock_out ? "Location verified" : "",
         record?.work_minutes == null ? "" : `${Math.floor(worked / 60)}:${String(worked % 60).padStart(2, "0")}`, record?.late_minutes, record?.early_leave_minutes,
         ledger.leave?.leave_type, ledger.leave?.portion, ledger.leave?.requested_days, ledger.leave?.reason, ledger.leave?.admin_note,
         ledger.holiday?.name || (ledger.status === "holiday" || ledger.status === "worked_on_holiday" ? "Official Sri Lanka holiday" : ""), ledger.holiday?.holiday_type, ledger.holiday?.source,

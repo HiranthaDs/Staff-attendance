@@ -17,6 +17,8 @@ Browser geolocation requires HTTPS outside localhost. Staff should enable precis
 ## Included features
 
 - Supabase email/password authentication and cookie sessions
+- Dedicated super-admin portal with role isolation, database-backed attempt limits, hashed security auditing, and last-login telemetry
+- One registered browser per attendance-capable staff account, with server-enforced checks, super-admin one-time replacement codes, and an auditable reset history
 - SaaS hierarchy with platform super admins, isolated companies, company owners, branch admins, and staff
 - Platform company provisioning, suspension controls, plans, and database-enforced active-user limits
 - Hashed, expiring, one-time registration links for company owners and staff (passwords are never sent by email)
@@ -27,6 +29,7 @@ Browser geolocation requires HTTPS outside localhost. Staff should enable precis
 - Secure one-time links for remote branch-location capture
 - Server-side distance verification for clock-in and clock-out
 - Short-lived, single-use attendance challenges and audit records
+- Attendance-aware staff sign-out that closes an open shift as a clearly flagged, unverified logout departure
 - Idempotent daily attendance records and safe clock-out handling
 - Branch-level late-arrival and early-departure grace periods
 - Monthly and annual leave requests and approvals
@@ -105,7 +108,7 @@ HTTPS from Vercel enables browser geolocation and PWA installation. After changi
 
 ## First run
 
-1. Sign in as the platform super admin and create a company workspace.
+1. Sign in as the platform super admin at `/super-admin/login` and create a company workspace.
 2. Send the generated owner-registration link; the company owner chooses their password and signs in.
 3. The company owner creates branches and sends one-time registration links to staff or branch administrators.
 4. Configure attendance tolerances, employee work hours, leave allowances, and payroll settings.

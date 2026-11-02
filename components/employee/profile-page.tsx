@@ -4,11 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
-import { ArrowLeft, Banknote, BellOff, BellRing, Building2, CalendarDays, Check, ChevronRight, Clock3, Download, KeyRound, LogOut, Mail, MapPin, Phone, Save, ShieldCheck, Smartphone, UserRound } from "lucide-react";
+import { ArrowLeft, Banknote, BellOff, BellRing, Building2, CalendarDays, Check, ChevronRight, Clock3, Download, KeyRound, LoaderCircle, LogOut, Mail, MapPin, MonitorSmartphone, Phone, Save, ShieldCheck, Smartphone, TriangleAlert, UserRound, X } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { NotificationCenter } from "@/components/notifications/notification-center";
 import { ProfilePhotoEditor } from "@/components/profile/profile-photo-editor";
-import { createClient } from "@/lib/supabase/client";
 import { currentPushSubscription, disablePushNotifications, enablePushNotifications } from "@/lib/push-client";
 import type { PresenceInstallPrompt } from "@/components/pwa-register";
 import type { AttendanceRecord, LeaveRequest, NotificationPreferences, PayrollRecord, Profile, SalarySettings } from "@/lib/types";
@@ -25,6 +24,9 @@ export function EmployeeProfilePage({ profile, attendance, leaves, salarySetting
   const [pushConfigured, setPushConfigured] = useState(true);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [avatarPath, setAvatarPath] = useState(profile.avatar_path ?? null);
+  const [logoutOpen, setLogoutOpen] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
   const [preferences, setPreferences] = useState<NotificationPreferences>({
     push_enabled: true,
     attendance_reminders: true,
@@ -36,6 +38,7 @@ export function EmployeeProfilePage({ profile, attendance, leaves, salarySetting
   const sunday = profile.work_schedule?.find((day) => day.weekday === 7);
   const salaryHistory = payrollRecords.filter((record) => record.status === "finalized" || record.status === "paid").slice(0, 6).reverse();
   const maxNetSalary = Math.max(1, ...salaryHistory.map((record) => Number(record.net_pay)));
+  const openAttendance = attendance.find((record) => record.clock_in && !record.clock_out) ?? null;
 
   useEffect(() => {
     const initialize = window.setTimeout(() => {
@@ -127,8 +130,17 @@ export function EmployeeProfilePage({ profile, attendance, leaves, salarySetting
   }
 
   async function logout() {
-    await createClient().auth.signOut();
+    setLogoutLoading(true);
+    setLogoutError("");
+    const response = await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setLogoutError(result.error || "Your attendance and session could not be closed safely.");
+      setLogoutLoading(false);
+      return;
+    }
     router.replace("/login");
+    router.refresh();
   }
 
   return <main className="employee-shell ios-shell profile-page-shell">
@@ -159,10 +171,13 @@ export function EmployeeProfilePage({ profile, attendance, leaves, salarySetting
         <div className="notification-save-row">{notificationMessage && <small>{notificationMessage}</small>}<button className="button button-primary" onClick={() => void savePreferences()} disabled={savingPreferences}><Save size={16} /> {savingPreferences ? "Saving..." : "Save preferences"}</button></div>
       </section>
 
-      <button className="profile-signout" onClick={logout}><LogOut size={18} /> Sign out</button>
+      <section className="profile-panel registered-device-card"><div className="profile-panel-head"><span><MonitorSmartphone size={19} /></span><div><h2>Registered attendance device</h2><p>This browser credential is checked again whenever attendance is marked.</p></div></div><ul className="settings-checklist"><li><Check size={15} /> One staff account per registered browser</li><li><Check size={15} /> Copied sessions cannot mark attendance</li><li><Check size={15} /> Only the super admin can issue a replacement code</li></ul></section>
+
+      <button className="profile-signout" onClick={() => setLogoutOpen(true)}><LogOut size={18} /> Sign out</button>
     </div>
 
     <nav className="mobile-nav refined-mobile-nav" aria-label="Employee navigation"><Link href="/app#home"><Building2 size={20} /><span>Home</span></Link><Link href="/app#calendar"><CalendarDays size={20} /><span>Calendar</span></Link><Link className="nav-clock" href="/app#home" aria-label="Attendance"><MapPin size={22} /></Link><Link href="/app#leave"><CalendarDays size={20} /><span>Leave</span></Link><Link className="active" href="/profile"><UserRound size={20} /><span>Profile</span></Link></nav>
+    {logoutOpen && <div className="modal-backdrop elevated-modal"><div className="modal staff-logout-modal" role="dialog" aria-modal="true" aria-labelledby="staff-logout-title"><div className="modal-head"><div><span className="eyebrow">ATTENDANCE-AWARE SIGN OUT</span><h2 id="staff-logout-title">{openAttendance ? "Signing out records that you left." : "Sign out of this device?"}</h2><p>{openAttendance ? "Your open work session will be closed at the current server time and shown as a logout departure, not a location-verified clock-out." : "Your attendance is already closed. This registered device remains linked to your account."}</p></div><button className="icon-button bordered" onClick={() => setLogoutOpen(false)} disabled={logoutLoading} aria-label="Close"><X size={20} /></button></div>{openAttendance && <div className="logout-attendance-warning"><TriangleAlert size={21} /><div><strong>Use the normal Clock out button when possible.</strong><p>It verifies that you are still inside the office. Logout departures are visibly flagged for administrators.</p></div></div>}{logoutError && <div className="form-alert error">{logoutError}</div>}<div className="modal-actions"><button className="button button-ghost" onClick={() => setLogoutOpen(false)} disabled={logoutLoading}>Stay signed in</button><button className="button button-primary" onClick={() => void logout()} disabled={logoutLoading}>{logoutLoading ? <><LoaderCircle className="spin" size={16} /> Closing session…</> : <><LogOut size={16} /> {openAttendance ? "Record departure & sign out" : "Sign out"}</>}</button></div></div></div>}
   </main>;
 }
 

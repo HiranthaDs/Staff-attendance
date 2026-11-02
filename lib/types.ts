@@ -50,6 +50,21 @@ export type Profile = {
   work_schedule?: WorkScheduleDay[];
 };
 
+export type StaffDeviceDirectoryRow = {
+  user_id: string;
+  full_name: string;
+  email: string | null;
+  employee_code: string | null;
+  role: "branch_admin" | "staff";
+  organization_name: string | null;
+  branch_name: string | null;
+  device_id: string | null;
+  device_label: string | null;
+  registered_at: string | null;
+  last_seen_at: string | null;
+  enrollment_expires_at: string | null;
+};
+
 export type WorkdayType = "full_day" | "half_day" | "off";
 
 export type WorkScheduleDay = {
@@ -207,6 +222,7 @@ export type AttendanceRecord = {
   attendance_date: string;
   clock_in: string | null;
   clock_out: string | null;
+  clock_out_source?: "location" | "logout" | null;
   status: "present" | "late" | "partial";
   work_minutes: number | null;
   late_minutes: number;

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { verifyCurrentStaffDevice } from "@/lib/staff-device-security";
 import type { Profile } from "@/lib/types";
 
 export async function getCurrentProfile(): Promise<Profile | null> {
@@ -16,11 +17,14 @@ export async function getCurrentProfile(): Promise<Profile | null> {
   return data as Profile | null;
 }
 
-export async function requireProfile() {
+export async function requireProfile(loginPath = "/login") {
   const profile = await getCurrentProfile();
-  if (!profile) redirect("/login");
-  if (!profile.active) redirect("/login?error=account_disabled");
-  if (profile.organization && profile.organization.status !== "active") redirect("/login?error=company_suspended");
+  if (!profile) redirect(loginPath);
+  if (!profile.active) redirect(`${loginPath}?error=account_disabled`);
+  if (profile.organization && profile.organization.status !== "active") redirect(`${loginPath}?error=company_suspended`);
+  if ((profile.role === "staff" || profile.role === "branch_admin") && !await verifyCurrentStaffDevice(profile.id)) {
+    redirect(`${loginPath}?error=device_required`);
+  }
   if (profile.must_reset_password) redirect("/auth/update-password");
   return profile;
 }
@@ -32,7 +36,7 @@ export async function requireAdmin() {
 }
 
 export async function requireSuperAdmin() {
-  const profile = await requireProfile();
+  const profile = await requireProfile("/super-admin/login");
   if (profile.role !== "super_admin") redirect(profile.role === "company_admin" || profile.role === "branch_admin" ? "/admin" : "/app");
   return profile;
 }

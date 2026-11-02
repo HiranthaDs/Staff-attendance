@@ -8,7 +8,11 @@ import { EmployeeDashboard } from "@/components/employee/employee-dashboard";
 import { loadCompanyHolidays, loadWorkSchedule } from "@/lib/workday-data";
 import type { AttendanceRecord, CalendarNote, CompanyHoliday, LeaveRequest, MissedAttendance, WorkScheduleDay } from "@/lib/types";
 
-export default async function EmployeePage() {
+export default async function EmployeePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ device?: string | string[] }>;
+}) {
   const profile = await requireProfile();
   if (profile.role === "super_admin") redirect("/super-admin");
   if (profile.role === "company_admin") redirect("/admin");
@@ -19,6 +23,7 @@ export default async function EmployeePage() {
   const yearStart = `${today.slice(0, 4)}-01-01`;
   const yearEnd = `${today.slice(0, 4)}-12-31`;
   const calendarEnd = `${Number(today.slice(0, 4)) + 1}-12-31`;
+  const query = await searchParams;
 
   const [{ data: todayRecord }, { data: attendance }, { data: leaves }, calendarNotes, holidays, workSchedule, { data: missedAttendance }] = await Promise.all([
     supabase.from("attendance_records").select("*").eq("user_id", profile.id).eq("attendance_date", today).maybeSingle(),
@@ -43,6 +48,7 @@ export default async function EmployeePage() {
       holidays={holidays as CompanyHoliday[]}
       workSchedule={workSchedule as WorkScheduleDay[]}
       missedAttendance={(missedAttendance ?? []) as MissedAttendance[]}
+      deviceJustRegistered={query.device === "registered"}
     />
   );
 }

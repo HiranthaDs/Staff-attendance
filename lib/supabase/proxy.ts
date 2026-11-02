@@ -6,7 +6,9 @@ export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
   const pathname = request.nextUrl.pathname;
   const isPublic =
+    pathname === "/" ||
     pathname.startsWith("/login") ||
+    pathname === "/super-admin/login" ||
     pathname === "/about" ||
     pathname === "/offline" ||
     pathname === "/robots.txt" ||
@@ -58,7 +60,9 @@ export async function updateSession(request: NextRequest) {
 
   if (!hasClaims && !pathname.startsWith("/_next")) {
     const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
+    loginUrl.pathname = pathname === "/super-admin" || pathname.startsWith("/super-admin/")
+      ? "/super-admin/login"
+      : "/login";
     loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
   }
